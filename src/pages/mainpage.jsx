@@ -15,7 +15,7 @@ function Mainpage() {
   const [classes, setClasses] = useState([]);
 
   const fetchClasses = (uname) => {
-    fetch(`http://localhost:3001/GetClasses/${uname}`)
+    fetch(`${import.meta.env.VITE_API_BASE_URL}/GetClasses/${uname}`)
       .then((res) => res.json())
       .then((data) => setClasses(data))
       .catch((err) => console.error("Failed to load classes", err));
@@ -46,7 +46,7 @@ function Mainpage() {
     const student_username = localStorage.getItem("username");
 
     try {
-      const res = await fetch("http://localhost:3001/JoinClass", {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/JoinClass`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ class_code: joinCode, student_username }),
@@ -75,7 +75,7 @@ function Mainpage() {
     console.log("Sending:", className); // Add this line
 
     try {
-      const res = await fetch("http://localhost:3001/CreateClass", {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/CreateClass`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

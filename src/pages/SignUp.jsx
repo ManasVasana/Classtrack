@@ -58,7 +58,7 @@ function SignUp() {
     console.log("Sending data:", data); 
 
     try {
-      const response = await Axios.post("http://localhost:3001/SignUp", data);
+      const response = await Axios.post(`${import.meta.env.VITE_API_BASE_URL}/SignUp`, data);
       console.log('Sending data:', data);
     
       if (response.status === 200) {

@@ -229,7 +229,7 @@ function Dashboard() {
           if (!isClassActive) {
             // Starting the class
             const response = await axios.post(
-              "http://localhost:3001/startAttendance",
+              `${import.meta.env.VITE_API_BASE_URL}/startAttendance`,
               {
                 class_id,
                 teacher_lat,
@@ -241,7 +241,7 @@ function Dashboard() {
             setIsClassActive(true);
           } else {
             // Stopping the class
-            await axios.post("http://localhost:3001/stopAttendance", {
+            await axios.post(`${import.meta.env.VITE_API_BASE_URL}/stopAttendance`, {
               class_id,
             });
 
@@ -351,7 +351,7 @@ function Dashboard() {
 
   const fetchClassDetails = async (class_id) => {
     console.log("Fetching class details for ID:", class_id);
-    fetch(`http://localhost:3001/getTClassDetails/${class_id}`)
+    fetch(`${import.meta.env.VITE_API_BASE_URL}/getTClassDetails/${class_id}`)
       .then((res) => res.json())
       .then((data) => setclassDetails(data))
       .catch((err) => console.error("Failed to load classes", err));
@@ -359,7 +359,7 @@ function Dashboard() {
 
   const fetchAttendtableDetails = async (class_id) => {
     console.log("Fetching attendance table details for ID:", class_id);
-    fetch(`http://localhost:3001/getTClass_attend_table_details/${class_id}`)
+    fetch(`${import.meta.env.VITE_API_BASE_URL}/getTClass_attend_table_details/${class_id}`)
       .then((res) => res.json())
       .then((data) => setattend_tableDetails(data))
       .catch((err) => console.error("Failed to load classes", err));

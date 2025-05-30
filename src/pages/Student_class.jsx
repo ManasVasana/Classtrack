@@ -57,7 +57,7 @@ const handleAttendanceSubmit = async (e) => {
       try {
         // Step 1: Request authentication options
         const optionsRes = await axios.post(
-          "http://localhost:3001/generate-authentication-options",
+          `${import.meta.env.VITE_API_BASE_URL}/generate-authentication-options`,
           { username: student_username },
           { withCredentials: true }
         );
@@ -67,7 +67,7 @@ const handleAttendanceSubmit = async (e) => {
         // Step 2: If user has no credentials, do registration
         if (options.registrationRequired) {
           const regOptionsRes = await axios.post(
-            "http://localhost:3001/generate-registration-options",
+            `${import.meta.env.VITE_API_BASE_URL}/generate-registration-options`,
             { username: student_username },
             { withCredentials: true }
           );
@@ -86,7 +86,7 @@ const handleAttendanceSubmit = async (e) => {
           const attestationResponse = await startRegistration({optionsJSON: regOptions});
 
           await axios.post(
-            "http://localhost:3001/verify-registration",
+            `${import.meta.env.VITE_API_BASE_URL}/verify-registration`,
             {
               username: student_username,
               attestationResponse,
@@ -103,7 +103,7 @@ const handleAttendanceSubmit = async (e) => {
 
         // Step 4: Submit attendance
         const res = await axios.post(
-          "http://localhost:3001/markAttendance",
+          `${import.meta.env.VITE_API_BASE_URL}/markAttendance`,
           {
             class_id,
             student_username,
