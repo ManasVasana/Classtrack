@@ -1,0 +1,7 @@
+/* Add this in your global CSS or Tailwind configuration */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
