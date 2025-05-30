@@ -52,16 +52,8 @@ const allowedOrigins = [
   'https://classtrack-git-main-manasvasanas-projects.vercel.app', // your preview/deployed Vercel domain
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS: ' + origin));
-    }
-  },
-  credentials: true, // if you're using cookies
-}));
+app.use(cors({ origin: true, credentials: true }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
