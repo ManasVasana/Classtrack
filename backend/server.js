@@ -10,15 +10,6 @@ const session = require("express-session");
 
 require('dotenv').config();
 
-  console.log("Trying to connect to", process.env.DB_HOST, process.env.DB_PORT);
-  console.log({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
-
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -54,13 +45,23 @@ const {
   verifyAuthenticationResponse,
 } = require("@simplewebauthn/server");
 
-app.use(
-  cors({
-    origin: "http://localhost:5173", // frontend origin
-    credentials: true,
-  })
-);
 
+const allowedOrigins = [
+  'http://localhost:5173', // for local dev
+  'https://classtrack.vercel.app', // for production custom domain (optional)
+  'https://classtrack-git-main-manasvasanas-projects.vercel.app', // your preview/deployed Vercel domain
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS: ' + origin));
+    }
+  },
+  credentials: true, // if you're using cookies
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
