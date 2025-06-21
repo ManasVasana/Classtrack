@@ -2,7 +2,7 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
-  withCredentials: true, // ✅ send cookies like refresh token
+  withCredentials: true, // ✅ still needed if your backend uses cookies for login/session
 });
 
 // Request interceptor: add access token to headers
@@ -14,10 +14,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor: handle 401 and refresh token
+// Response interceptor: just return or forward error — refresh token logic is disabled
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // 🔁 Refresh token logic disabled below
+
+    /*
     const originalRequest = error.config;
 
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -39,6 +42,7 @@ api.interceptors.response.use(
         return Promise.reject("Unable to refresh token. Login again.");
       }
     }
+    */
 
     return Promise.reject(error);
   }
