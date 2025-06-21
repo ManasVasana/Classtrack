@@ -19,36 +19,36 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.post("/Logout", (req, res) => {
-  res.clearCookie("refreshToken", {
-    httpOnly: true,
-    secure: false, // set to true in production with HTTPS
-    sameSite: "Strict",
-  });
+  // res.clearCookie("refreshToken", {
+  //   httpOnly: true,
+  //   secure: true, // set to true in production with HTTPS
+  //   sameSite: "Strict",
+  // });
 
   return res.status(200).json({ message: "Logged out" });
 });
 
 
-app.post("/refresh-token", (req, res) => {
-  const token = req.cookies.refreshToken;
+// app.post("/refresh-token", (req, res) => {
+//   const token = req.cookies.refreshToken;
 
-  if (!token)
-    return res.status(401).json({ message: "No refresh token provided" });
+//   if (!token)
+//     return res.status(401).json({ message: "No refresh token provided" });
 
-  jwt.verify(token, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ message: "Invalid refresh token" });
+//   jwt.verify(token, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => {
+//     if (err) return res.status(403).json({ message: "Invalid refresh token" });
 
-    const payload = { id: decoded.id, username: decoded.username };
+//     const payload = { id: decoded.id, username: decoded.username };
 
-    const newAccessToken = jwt.sign(payload, process.env.JWT_secret, {
-      expiresIn: "5m",
-    });
+//     const newAccessToken = jwt.sign(payload, process.env.JWT_secret, {
+//       expiresIn: "5m",
+//     });
 
-    return res.status(200).json({
-      token: newAccessToken,
-    });
-  });
-});
+//     return res.status(200).json({
+//       token: newAccessToken,
+//     });
+//   });
+// });
 
 
 app.post("/Login", (req, res) => {
@@ -72,28 +72,29 @@ app.post("/Login", (req, res) => {
 
     const payload = { id: user.id, username: user.username,role: user.role};
 
-    let accessToken, refreshToken;
+    let accessToken;
+    // let refreshToken;
 
     try {
       accessToken = jwt.sign(payload, process.env.JWT_secret, {
         expiresIn: "7d", // 5 minutes
       });
 
-      refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, {
-        expiresIn: "7d", // 7 days
-      });
+      // refreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, {
+      //   expiresIn: "7d", // 7 days
+      // });
     } catch (err) {
       console.error("❌ JWT Signing Error:", err);
       return res.status(500).json({ message: "Token generation failed" });
     }
 
     // 🔐 Send refresh token as secure HTTP-only cookie
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: false, // set to true if using HTTPS in production
-      sameSite: "Strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // res.cookie("refreshToken", refreshToken, {
+    //   httpOnly: true,
+    //   secure: false, // set to true if using HTTPS in production
+    //   sameSite: "Strict",
+    //   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    // });
 
     console.log("✅ Access token:", accessToken);
 
