@@ -1,12 +1,14 @@
 "use client";
 
 import axios from "axios";
+import api from "../utils/api.js";
 import { useEffect } from "react";
 import React, { useState, useCallback } from "react";
-import { Play, Users, Check, X } from "lucide-react";
+import { Play, Users, Check, X, Megaphone, Bell } from "lucide-react";
 import { useParams } from "react-router-dom";
 import CountUp from "./Counting.jsx";
 import AttendanceTable from "../components/Tclass-attend_table.jsx";
+import { PlusCircle } from "react-feather";
 
 import {
   Bar,
@@ -20,11 +22,9 @@ import {
   Sector,
 } from "recharts";
 
-// Sample data
-
 const CustomCard = ({ children, className = "" }) => (
   <div
-    className={`bg-gray-800 rounded-lg shadow-md overflow-hidden ${className}`}
+    className={`bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden ${className}`}
   >
     {children}
   </div>
@@ -36,7 +36,7 @@ const CustomCardHeader = ({ children, className = "" }) => (
 
 const CustomCardTitle = ({ children, className = "" }) => (
   <h2
-    className={`text-lg sm:text-xl md:text-2xl font-semibold text-gray-100 ${className}`}
+    className={`text-lg sm:text-xl md:text-2xl font-semibold text-gray-800 dark:text-gray-100 ${className}`}
   >
     {children}
   </h2>
@@ -48,7 +48,7 @@ const CustomCardContent = ({ children, className = "" }) => (
 
 const CustomButton = ({ children, className = "", ...props }) => (
   <button
-    className={`px-4 py-2 rounded-md text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 ${className}`}
+    className={`px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 text-gray-900 dark:text-gray-100 focus:ring-offset-white dark:focus:ring-offset-gray-800 ${className}`}
     {...props}
   >
     {children}
@@ -57,24 +57,28 @@ const CustomButton = ({ children, className = "", ...props }) => (
 
 const CustomTable = ({ children, className = "" }) => (
   <div className={`w-full overflow-x-auto ${className}`}>
-    <table className="min-w-full divide-y divide-gray-700">{children}</table>
+    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      {children}
+    </table>
   </div>
 );
 
 const CustomTableHeader = ({ children }) => (
-  <thead className="bg-gray-700">
+  <thead className="bg-gray-100 dark:bg-gray-700">
     <tr>{children}</tr>
   </thead>
 );
 
 const CustomTableBody = ({ children }) => (
-  <tbody className="bg-gray-800 divide-y divide-gray-700">{children}</tbody>
+  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+    {children}
+  </tbody>
 );
 
 const CustomTableHead = ({ children, className = "" }) => (
   <th
     scope="col"
-    className={`px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider ${className}`}
+    className={`px-6 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider ${className}`}
   >
     {children}
   </th>
@@ -83,7 +87,9 @@ const CustomTableHead = ({ children, className = "" }) => (
 const CustomTableRow = ({ children }) => <tr>{children}</tr>;
 
 const CustomTableCell = ({ children, className = "" }) => (
-  <td className={`px-6 py-4 whitespace-nowrap text-gray-300 ${className}`}>
+  <td
+    className={`px-6 py-4 whitespace-nowrap text-gray-700 dark:text-gray-300 ${className}`}
+  >
     {children}
   </td>
 );
@@ -91,10 +97,12 @@ const CustomTableCell = ({ children, className = "" }) => (
 const CustomBarTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-700">
-        <p className="text-lg font-bold text-blue-400">{payload[0].value}%</p>
-        <p className="text-sm text-gray-300">Date: {payload[0].payload.date}</p>
-        <p className="text-sm text-gray-300">
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+        <p className="text-lg font-bold text-blue-500">{payload[0].value}%</p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          Date: {payload[0].payload.date}
+        </p>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
           Attendance: {payload[0].payload.attendance} students
         </p>
       </div>
@@ -202,7 +210,7 @@ const renderActiveShape = (props) => {
 
 function Dashboard() {
   const { id: class_id } = useParams();
-    const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState(null);
   const [activeIndex, setActiveIndex] = useState(-1);
   const onPieEnter = useCallback((_, index) => {
     setActiveIndex(index);
@@ -228,20 +236,17 @@ function Dashboard() {
         try {
           if (!isClassActive) {
             // Starting the class
-            const response = await axios.post(
-              `${import.meta.env.VITE_API_BASE_URL}/startAttendance`,
-              {
-                class_id,
-                teacher_lat,
-                teacher_lng,
-              }
-            );
+            const response = await api.post(`/startAttendance`, {
+              class_id,
+              teacher_lat,
+              teacher_lng,
+            });
 
             setAttendanceCode(response.data.code);
             setIsClassActive(true);
           } else {
             // Stopping the class
-            await axios.post(`${import.meta.env.VITE_API_BASE_URL}/stopAttendance`, {
+            await api.post(`/stopAttendance`, {
               class_id,
             });
 
@@ -318,9 +323,7 @@ function Dashboard() {
       const d2 = new Date(2024, mb - 1, db);
       return d1 - d2;
     });
-
-    const last5 = sessions.slice(-5);
-    setattendanceData(last5);
+    setattendanceData(sessions);
   }, [attend_tableDetails]);
 
   const presentCount = attend_tableDetails.filter(
@@ -349,20 +352,49 @@ function Dashboard() {
     fetchAttendtableDetails(class_id);
   }, [class_id]);
 
+  useEffect(() => {
+    console.log("Fetching class status for ID:", class_id);
+    checkClassStatus();
+  }, []);
+
+  const checkClassStatus = async () => {
+    try {
+      const response = await api.get(`/isClassActive`, {
+        params: { class_id },
+      });
+
+      setIsClassActive(response.data.isActive);
+      console.log("Class status response:", response.data);
+      console.log("Attendance code:", response.data.attendance_code);
+      if (response.data.isActive) {
+        setAttendanceCode(response.data.attendance_code);
+      } else {
+        setAttendanceCode("");
+      }
+    } catch (error) {
+      console.error("Error checking class status:", error);
+    }
+  };
+
   const fetchClassDetails = async (class_id) => {
     console.log("Fetching class details for ID:", class_id);
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/getTClassDetails/${class_id}`)
-      .then((res) => res.json())
-      .then((data) => setclassDetails(data))
-      .catch((err) => console.error("Failed to load classes", err));
+    try {
+      const res = await api.get(`/getTClassDetails/${class_id}`);
+      setclassDetails(res.data);
+    } catch (err) {
+      console.error("Failed to load class details", err);
+    }
   };
 
   const fetchAttendtableDetails = async (class_id) => {
     console.log("Fetching attendance table details for ID:", class_id);
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/getTClass_attend_table_details/${class_id}`)
-      .then((res) => res.json())
-      .then((data) => setattend_tableDetails(data))
-      .catch((err) => console.error("Failed to load classes", err));
+    try {
+      const res = await api.get(`/getTClass_attend_table_details/${class_id}`);
+      setattend_tableDetails(res.data);
+      console.log("Attendance table details:", res.data);
+    } catch (err) {
+      console.error("Failed to load attendance table details", err);
+    }
   };
 
   const [empty, setEmpty] = useState(false);
@@ -389,17 +421,17 @@ function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-r from-gray-900 to-gray-950 p-2 sm:p-4 md:p-6 lg:p-14 text-gray-100">
+    <div className="min-h-screen w-full bg-gradient-to-r from-[#f0f9ff] to-[#e8f3ff] dark:bg-gradient-to-r dark:from-gray-900 dark:to-gray-950 p-2 sm:p-4 md:p-6 lg:p-14 text-gray-900 dark:text-gray-100">
       <div className="space-y-4 sm:space-y-6 lg:space-y-8">
         {/* Top Cards Section */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Course Info Card */}
-          <CustomCard className="w-full">
+          <CustomCard className="w-full bg-white dark:bg-gray-800">
             <CustomCardHeader className="bg-gradient-to-r from-cyan-500 to-blue-500">
               <CustomCardTitle>{classDetails.name}</CustomCardTitle>
             </CustomCardHeader>
-            <CustomCardContent className="flex items-center gap-2">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-white/20 flex items-center justify-center">
+            <CustomCardContent className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-black/10 dark:bg-white/20 flex items-center justify-center">
                 <Users className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
               <span className="text-sm sm:text-base">
@@ -411,46 +443,43 @@ function Dashboard() {
                   e.preventDefault();
                   handleCopy(classDetails.class_code);
                 }}
-                className="text-white text-xs hover:text-cyan-300"
+                className="text-xs text-blue-600 dark:text-cyan-300 ml-auto"
                 title="Copy class code"
               >
-                <p className="text-xs sm:text-sm opacity-80 ml-[220px]">
-                  {classDetails.class_code}
-                </p>
+                {classDetails.class_code}
               </button>
             </CustomCardContent>
           </CustomCard>
 
           {/* Live Class Card */}
-          <CustomCard>
+          <CustomCard className="bg-white dark:bg-gray-800">
             <CustomCardHeader>
               <CustomCardTitle>Live Class</CustomCardTitle>
             </CustomCardHeader>
-            <CustomCardContent className="space-y-4">
+            <CustomCardContent className="space-y-4 text-gray-700 dark:text-gray-300">
               <CustomButton
                 className={`w-full ${
                   isClassActive
                     ? "bg-red-500 hover:bg-red-600"
                     : "bg-emerald-500 hover:bg-emerald-600"
-                } text-xs sm:text-sm md:text-base`}
+                } text-white text-xs sm:text-sm md:text-base`}
                 onClick={handleToggleClass}
               >
                 {isClassActive ? "Stop Live Class" : "Start Live Class"}
               </CustomButton>
 
               {status && (
-                  <div
-                    className={`text-center text-lg mt-4 text-red-400
-                    `}
-                  >
-                    {status.message}
-                  </div>
-                )}
+                <div className="text-center text-lg mt-4 text-red-500 dark:text-red-400">
+                  {status.message}
+                </div>
+              )}
 
               {isClassActive && (
                 <div className="text-center mt-2">
-                  <p className="text-sm text-gray-400">Attendance Code:</p>
-                  <p className="text-3xl font-bold text-emerald-400 bg-gray-900 px-4 py-2 rounded-md inline-block tracking-widest shadow-md border border-emerald-600">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Attendance Code:
+                  </p>
+                  <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 bg-white dark:bg-gray-900 px-4 py-2 rounded-md inline-block tracking-widest shadow-md border border-emerald-600">
                     {attendanceCode}
                   </p>
                 </div>
@@ -459,25 +488,25 @@ function Dashboard() {
           </CustomCard>
 
           {/* Total Students Card */}
-          <CustomCard>
+          <CustomCard className="bg-white dark:bg-gray-800">
             <CustomCardHeader>
               <CustomCardTitle>Total Students</CustomCardTitle>
             </CustomCardHeader>
-            <CustomCardContent className="flex justify-between items-center">
-              <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-400" />
+            <CustomCardContent className="flex justify-between items-center text-gray-700 dark:text-gray-300">
+              <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 dark:text-blue-400" />
               <CountUp target={classDetails.student_count} />
             </CustomCardContent>
           </CustomCard>
         </div>
 
         {!empty && (
-          <div className="flex gap-4 sm:gap-6 items-center justify-center ">
+          <div className="flex gap-4 sm:gap-6 items-center justify-center">
             {/* Average Attendance Card */}
-            <CustomCard className="w-2/5 h-[400px]">
+            <CustomCard className="w-2/5 h-[400px] bg-white dark:bg-gray-800">
               <CustomCardHeader>
                 <CustomCardTitle>Average Attendance</CustomCardTitle>
               </CustomCardHeader>
-              <CustomCardContent className="flex flex-col items-center">
+              <CustomCardContent className="flex flex-col items-center text-gray-700 dark:text-gray-300">
                 <div className="md:h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -520,9 +549,7 @@ function Dashboard() {
                         className="w-4 h-4 rounded-full mr-2"
                         style={{ backgroundColor: entry.color }}
                       />
-                      <span className="text-gray-100 text-base">
-                        {entry.name}
-                      </span>
+                      <span className="text-base">{entry.name}</span>
                     </div>
                   ))}
                 </div>
@@ -530,17 +557,20 @@ function Dashboard() {
             </CustomCard>
 
             {/* Daily Attendance Chart */}
-            <CustomCard className="w-3/5 h-[400px]">
+            <CustomCard className="w-3/5 h-[400px] bg-black dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
               <CustomCardHeader>
-                <CustomCardTitle>Daily Attendance Percentage</CustomCardTitle>
+                <CustomCardTitle className="text-gray-900 dark:text-gray-100">
+                  Daily Attendance Percentage
+                </CustomCardTitle>
               </CustomCardHeader>
-              <CustomCardContent>
+              <CustomCardContent className="text-gray-700 dark:text-gray-300">
                 <div className="md:h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={attendanceData}>
                       <XAxis
                         dataKey="date"
-                        stroke="#9CA3AF"
+                        stroke="#6B7280"
+                        tick={{ fill: "#6B7280" }}
                         fontSize={10}
                         tickLine={false}
                         axisLine={false}
@@ -562,8 +592,22 @@ function Dashboard() {
           </div>
         )}
 
-        {!empty && <AttendanceTable studentData1={attend_tableDetails} />}
+        {!empty && (
+          <AttendanceTable
+            studentData1={attend_tableDetails}
+            onRefetch={fetchAttendtableDetails}
+          />
+        )}
       </div>
+      {/* <div className="flex justify-center fixed bottom-8 right-8">
+        <button
+          // onClick={addClass}
+          className="group relative inline-flex items-center justify-center px-3 py-3 overflow-hidden font-bold text-white rounded-full shadow-2xl bg-gradient-to-br from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 transition-all duration-300 ease-out hover:scale-105"
+        >
+          <span className="absolute right-0 w-8 h-32 -mt-12 transition-all duration-1000 transform translate-x-12 bg-white opacity-10 rotate-12 group-hover:-translate-x-40 ease"></span>
+          <PlusCircle />
+        </button>
+      </div> */}
     </div>
   );
 }

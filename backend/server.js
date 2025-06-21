@@ -5,35 +5,28 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const base64url = require("base64url");
 const cookieParser = require("cookie-parser");
-app.use(cookieParser()); // <== add this above session
+app.use(cookieParser());
 const session = require("express-session");
+const jwt = require("jsonwebtoken");
+const verifyJWT = require("./middleware/auth");
+const authRoutes = require("./controllers/Sign_in_up.js");
+const GetUserInfo = require("./routes/profile.js");
+const { isoBase64URL } = require("@simplewebauthn/server/helpers");
 
-require('dotenv').config();
+require("dotenv").config();
 
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,                
-    ssl: {
-        rejectUnauthorized: false  
-    },
-      connectTimeout: 100000     // (optional) set a longer timeout (10 sec)
-  });
-
-
+const db = require("./utils/db.js");
 
 app.use(
   session({
-    name: "connect.sid", // optional: sets the session cookie name
+    name: "connect.sid",
     secret: "your-secret-key",
     resave: false,
-    saveUninitialized: false, // changed from true
+    saveUninitialized: false,
     cookie: {
-      secure: false, // true if HTTPS
+      secure: true, // true if HTTPS
       httpOnly: true,
-      sameSite: "lax", // try lax first, if still fails then 'none'
+      sameSite: "none", // try lax first, if still fails then 'none'
     },
   })
 );
@@ -44,12 +37,13 @@ const {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } = require("@simplewebauthn/server");
-
+const { is } = require("type-is");
 
 const allowedOrigins = [
-  'http://localhost:5173', // for local dev
-  'https://classtrack.vercel.app', // for production custom domain (optional)
-  'https://classtrack-git-main-manasvasanas-projects.vercel.app', // your preview/deployed Vercel domain
+  "http://localhost:5173", // for local dev
+  "https://classtrack.vercel.app", // for production custom domain (optional)
+  "https://classtrack-git-main-manasvasanas-projects.vercel.app",
+  "www.classtrack.me", // for production vercel domain
 ];
 
 app.use(cors({ origin: true, credentials: true }));
@@ -61,7 +55,6 @@ const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
-
 
 function generateUniqueCode(callback) {
   const characters =
@@ -86,12 +79,47 @@ function generateUniqueCode(callback) {
 
   tryGenerate();
 }
+app.use("/", authRoutes); // Routes mounted on root
+app.use("/", GetUserInfo); // Routes mounted on root
 
-app.get("/getTClassDetails/:class_id", (req, res) => {
+app.get("/isClassActive", verifyJWT, (req, res) => {
+  const class_id = req.query.class_id; // ✅ FIXED
+  const query = `SELECT is_active, attendance_code
+FROM attendance_sessions 
+WHERE class_id = ? 
+ORDER BY id DESC 
+LIMIT 1;
+`;
+
+  db.query(query, [class_id], (err, result) => {
+    if (err) {
+      console.error("DB error:", err);
+      return res.status(500).json({ message: "DB error" });
+    }
+    if (result.length === 0) {
+      return res.status(200).json({ isActive: false, attendance_code: "" });
+    }
+    let isActive;
+    if (result[0].is_active == 1) {
+      isActive = true;
+    } else {
+      isActive = false;
+    }
+
+    console.log("isActive:", isActive);
+    console.log("attendance_code:", result[0].attendance_code);
+
+    return res
+      .status(200)
+      .json({ isActive, attendance_code: result[0].attendance_code });
+  });
+});
+
+app.get("/getTClassDetails/:class_id", verifyJWT, (req, res) => {
   const class_id = req.params.class_id;
 
   const query = `
-    SELECT c.id, c.name, c.class_code, u.name AS teacher_name,
+    SELECT c.id, c.name, c.class_code, u.username AS teacher_name,
            COUNT(cs.student_id) AS student_count
     FROM classes c
     JOIN users u ON c.teacher_id = u.id
@@ -107,14 +135,14 @@ app.get("/getTClassDetails/:class_id", (req, res) => {
   });
 });
 
-app.get("/getTClass_attend_table_details/:class_id", (req, res) => {
+app.get("/getTClass_attend_table_details/:class_id", verifyJWT, (req, res) => {
   const class_id = req.params.class_id;
   console.log("class_id", class_id);
 
   const query = `
         SELECT 
           cs.student_id,
-          u.name AS student_name,
+          u.username AS student_name,
           s.id AS session_id,
           DATE(s.started_at) AS session_date,  
           CASE 
@@ -137,532 +165,363 @@ app.get("/getTClass_attend_table_details/:class_id", (req, res) => {
   });
 });
 
+app.post("/generate-registration-options", verifyJWT, (req, res) => {
+  const { id, username } = req.user;
 
-// Registration Options
-app.post("/generate-registration-options", async (req, res) => {
-  const { username } = req.body;
-  console.log("📩 Registration options requested by:", username);
+  const options = generateRegistrationOptions({
+    rpName: "ClassTrack",
+    rpID: "classtrack.me", // Use your production domain here
+    // rpID: "localhost", // Use for local development
+    userID: Buffer.from(userId.toString()),
 
-  if (!username) {
-    return res.status(400).json({ error: "Missing username" });
+    userName: username,
+    attestationType: "none",
+    authenticatorSelection: {
+      userVerification: "preferred",
+      residentKey: "discouraged",
+    },
+  });
+
+  req.session.challenge = options.challenge;
+  res.json(options);
+});
+
+app.post("/verify-registration", verifyJWT, async (req, res) => {
+  console.log(" Registration response received:", req.body);
+
+  const attestationResponse = req.body;
+
+  if (!attestationResponse.id) {
+    console.error(" Missing credential ID!");
+    return res.status(400).json({ message: "Missing credential ID" });
   }
 
+  try {
+    const verification = await verifyRegistrationResponse({
+      response: attestationResponse,
+      expectedChallenge: req.session.currentRegistrationChallenge,
+      // expectedOrigin: "http://localhost:5173",
+      // expectedRPID: "localhost",
+      expectedOrigin: "https://www.classtrack.me",
+      expectedRPID: "classtrack.me",
+    });
+
+    console.log("Verification result:", verification);
+
+    const { verified, registrationInfo } = verification;
+
+    if (!verified || !registrationInfo || !registrationInfo.credential) {
+      return res.status(400).json({ message: "Invalid registration info" });
+    }
+
+    console.log("verification:", verification);
+    console.log("verificationInfo", registrationInfo);
+
+    const credentialID = registrationInfo.credential.id;
+    const publicKeyBuffer = registrationInfo.credential.publicKey;
+    const credentialType = registrationInfo.credentialType;
+
+    const updateQuery = `
+  UPDATE users
+  SET credential_id = ?, public_key = ?, credential_type = ?
+  WHERE id = ?
+`;
+
+    db.query(
+      updateQuery,
+      [
+        credentialID,
+        isoBase64URL.fromBuffer(publicKeyBuffer),
+        credentialType,
+        req.user.id,
+      ],
+      (err, result) => {
+        if (err) {
+          console.error("Failed to save WebAuthn credentials to DB:", err);
+          return res.status(500).json({ message: "Database update failed" });
+        }
+
+        console.log("WebAuthn credentials saved to DB for user:", req.user.id);
+        res.status(200).json({ verified: true });
+      }
+    );
+  } catch (err) {
+    console.error("Verification failed:", err);
+    res
+      .status(400)
+      .json({ message: "Verification failed", error: err.toString() });
+  }
+});
+
+app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
+  const userId = req.user.id;
+
   db.query(
-    "SELECT id, name FROM users WHERE username = ?",
-    [username],
-    async (err, result) => {
-      if (err) {
-        console.error("❌ DB error (user lookup):", err);
-        return res.status(500).json({ error: "Database error" });
+    "SELECT credential_id, credential_type FROM users WHERE id = ?",
+    [userId],
+    async (err, results) => {
+      if (err || results.length === 0) {
+        return res.status(500).json({ message: "DB error" });
       }
 
-      if (result.length === 0) {
-        console.log("❗ No user found:", username);
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      const user = result[0];
+      const { credential_id, credential_type } = results[0];
+      console.log("debug:", credential_id, credential_type);
 
       try {
-        const options = await generateRegistrationOptions({
-          rpName: "ClassTrack",
-          rpID: "localhost",
-          userID: Buffer.from(String(user.id), "utf-8"),
-          userName: username,
-          userDisplayName: user.name,
-          timeout: 60000,
-          attestationType: "none",
-          authenticatorSelection: {
-            userVerification: "required",
-            residentKey: "required",
-          },
+        if (typeof credential_id !== "string") {
+          throw new Error("credential_id must be a string in base64url format");
+        }
+        const options = await generateAuthenticationOptions({
+          rpID: "classtrack.me",
+          // allowCredentials: [
+          //   {
+          //     id: credential_id,
+          //     type: "public-key",
+          //   },
+          // ],
+          // userVerification: "preferred",
         });
 
-        req.session.currentChallenge = options.challenge;
+        console.log("Generated options:", options);
 
-        console.log("✅ Registration options sent:", options);
+        req.session.challenge = options.challenge;
         res.json(options);
-      } catch (error) {
-        console.error("❌ Failed to generate registration options:", error);
-        res
-          .status(500)
-          .json({ error: "Failed to generate registration options" });
+      } catch (err) {
+        console.error("Auth Option Error:", err);
+        res.status(500).json({ message: "Failed to generate options" });
       }
     }
   );
 });
 
-// Authentication Options
-app.post("/generate-authentication-options", async (req, res) => {
-  const { username } = req.body;
-
-  if (!username) {
-    return res.status(400).json({ error: "Missing username" });
-  }
+app.post("/verify-authentication", verifyJWT, (req, res) => {
+  const userId = req.user.id;
+  const { auth_response } = req.body;
+  const challenge = req.session.challenge;
 
   db.query(
-    "SELECT id FROM users WHERE username = ?",
-    [username],
-    (err, result) => {
-      if (err || result.length === 0) {
-        console.error("User lookup failed:", err);
-        return res.status(400).json({ error: "User not found" });
+    "SELECT credential_id, public_key, auth_counter FROM users WHERE id = ?",
+    [userId],
+    async (err, results) => {
+      if (err || results.length === 0) {
+        return res.status(500).json({ message: "DB error" });
       }
 
-      const user_id = result[0].id;
+      const { credential_id, public_key, auth_counter } = results[0];
 
+      console.log("auth_response:", auth_response);
+      console.log("challenge:", challenge);
+
+      console.log("final:", isoBase64URL.toBuffer(public_key));
+
+      const verification = await verifyAuthenticationResponse({
+        expectedChallenge: challenge,
+        // expectedOrigin: "http://localhost:5173",
+        // expectedRPID: "localhost",
+        expectedOrigin: "https://www.classtrack.me",
+        expectedRPID: "classtrack.me",
+        response: auth_response,
+        credential: {
+          id: credential_id,
+          publicKey: isoBase64URL.toBuffer(public_key),
+          counter: auth_counter,
+        },
+      });
+
+      if (!verification.verified) {
+        return res.status(401).json({ message: "Device not verified" });
+      }
+
+      // Update the counter in the database if verification succeeded
       db.query(
-        "SELECT credential_id FROM authenticators WHERE user_id = ?",
-        [user_id],
-        async (err2, rows) => {
-          if (err2) {
-            console.error("Credential fetch failed:", err2);
-            return res
-              .status(500)
-              .json({ error: "Internal error fetching credentials" });
+        "UPDATE users SET auth_counter = ? WHERE id = ?",
+        [verification.authenticationInfo.newCounter, userId],
+        (updateErr) => {
+          if (updateErr) {
+            console.error("Failed to update counter:", updateErr);
           }
-
-          if (rows.length === 0) {
-            console.log("⚠️ No authenticators found for user_id", user_id);
-            return res.json({ registrationRequired: true });
-          }
-
-          // ✅ Use credential_id as-is — it's already base64url encoded
-
-          const allowCredentials = rows
-            .map((row) => {
-              try {
-                // Convert base64url string from DB into a Buffer
-                const bufferId = base64url.toBuffer(row.credential_id);
-                return {
-                  id: row.credential_id, 
-                  type: "public-key",
-                  transports: ["internal"], // Optional
-                };
-              } catch (e) {
-                console.error(
-                  "❌ Failed to decode credential_id:",
-                  row.credential_id
-                );
-                return null;
-              }
-            })
-            .filter(Boolean);
-
-            console.log(allowCredentials);
-          if (allowCredentials.length === 0) {
-            return res.json({ registrationRequired: true });
-          }
-
-          const options = await generateAuthenticationOptions({
-            timeout: 60000,
-            rpID: "localhost",
-            userVerification: "preferred",
-            allowCredentials,
-          });
-
-          req.session.currentChallenge = options.challenge;
-          req.session.save(() => {
-            console.log("✅ Challenge saved in session");
-            console.log(
-              "Expected challenge from session:",
-              req.session.currentChallenge
-            );
-            res.json(options); // Will include Buffer, which frontend can use
-          });
         }
       );
+
+      req.session.deviceVerified = true;
+      res.json({ success: true });
     }
   );
 });
 
-// Verify Registration
-app.post("/verify-registration", async (req, res) => {
-  const { username, attestationResponse } = req.body;
+app.post("/markAttendance", verifyJWT, async (req, res) => {
+  const { class_id, attendance_code, student_lat, student_lng } = req.body;
+  const userId = req.user.id;
+  const username = req.user.username;
 
-  if (!attestationResponse) {
-    return res.status(400).json({ error: "Missing attestation response" });
-  }
-
-  db.query(
-    "SELECT id FROM users WHERE username = ?",
-    [username],
-    async (err, result) => {
-      if (err) {
-        console.error("❌ DB error (user lookup):", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
-
-      if (result.length === 0) {
-        return res.status(400).json({ error: "User not found" });
-      }
-
-      const user_id = result[0].id;
-
-      try {
-        console.log("🟡 Starting registration verification...");
-
-        const verification = await verifyRegistrationResponse({
-          response: attestationResponse,
-          expectedChallenge: req.session.currentChallenge,
-          expectedOrigin: "http://localhost:5173",
-          expectedRPID: "localhost",
-        });
-
-        console.log("🟢 Verification result:", verification);
-
-        if (!verification.verified) {
-          console.error("❌ Registration failed:", verification);
-          return res
-            .status(403)
-            .json({ error: "WebAuthn verification failed" });
-        }
-
-        const {
-          credential: {
-            id: credentialID,
-            publicKey: credentialPublicKey,
-            counter,
-          },
-        } = verification.registrationInfo || {};
-
-        if (!credentialID || !credentialPublicKey) {
-          return res.status(400).json({ error: "Missing credential data" });
-        }
-
-        const credentialIDEncoded = base64url.encode(Buffer.from(credentialID));
-        const publicKeyEncoded = base64url.encode(
-          Buffer.from(credentialPublicKey)
-        );
-
-        db.query(
-          "INSERT INTO authenticators (user_id, credential_id, public_key, counter) VALUES (?, ?, ?, ?)",
-          [user_id, credentialIDEncoded, publicKeyEncoded, counter],
-          (insertErr) => {
-            if (insertErr) {
-              console.error("❌ Failed to save authenticator:", insertErr);
-              return res
-                .status(500)
-                .json({ error: "Failed to save authenticator" });
-            }
-
-            console.log("✅ Authenticator registered for:", username);
-            res.json({ success: true });
-          }
-        );
-      } catch (e) {
-        console.error("❌ Exception during registration verification:", e);
-        return res
-          .status(400)
-          .json({ error: "Registration verification failed" });
-      }
+  function haversineDistance(lat1, lon1, lat2, lon2) {
+    function toRad(x) {
+      return (x * Math.PI) / 180;
     }
-  );
-});
-
-// app.post("/generate-authentication-options", (req, res) => {
-//   const { username } = req.body;
-
-//   if (!username) {
-//     return res.status(400).json({ error: "Missing username" });
-//   }
-
-//   db.query(
-//     "SELECT id FROM users WHERE username = ?",
-//     [username],
-//     (err, result) => {
-//       if (err || result.length === 0) {
-//         console.error("User lookup failed:", err);
-//         return res.status(400).json({ error: "User not found" });
-//       }
-
-//       const user_id = result[0].id;
-
-//       db.query(
-//         "SELECT credential_id FROM authenticators WHERE user_id = ?",
-//         [user_id],
-//         (err2, rows) => {
-//           if (err2) {
-//             console.error("Credential fetch failed:", err2);
-//             return res
-//               .status(500)
-//               .json({ error: "Internal error fetching credentials" });
-//           }
-
-//           if (rows.length === 0) {
-//             // No registered authenticator, frontend must register
-//             return res.json({ registrationRequired: true });
-//           }
-
-//           let allowCredentials = [];
-
-//           try {
-//             allowCredentials = rows
-//               .map((row) => {
-//                 if (!row.credential_id) {
-//                   console.warn(
-//                     "⚠️ Skipping undefined credential_id for user_id:",
-//                     user_id
-//                   );
-//                   return null;
-//                 }
-
-//                 let idBuffer;
-
-//                 if (typeof row.credential_id === "string") {
-//                   // It's base64url encoded in DB
-//                   idBuffer = base64url.toBuffer(row.credential_id);
-//                 } else if (Buffer.isBuffer(row.credential_id)) {
-//                   // Already a Buffer (maybe stored directly as binary)
-//                   idBuffer = row.credential_id;
-//                 } else {
-//                   console.error(
-//                     "❌ Unexpected credential_id type:",
-//                     typeof row.credential_id
-//                   );
-//                   return null;
-//                 }
-
-//                 return {
-//                   id: idBuffer,
-//                   type: "public-key",
-//                   transports: ["internal"],
-//                 };
-//               })
-//               .filter(Boolean);
-//           } catch (error) {
-//             console.error("❌ Failed to parse credential_id(s):", error);
-//             return res.status(500).json({ error: "Invalid credential format" });
-//           }
-
-//           const options = generateAuthenticationOptions({
-//             timeout: 60000,
-//             rpID: "localhost", // Must match the domain or IP of the RP
-//             userVerification: "preferred",
-//             allowCredentials,
-//           });
-
-//           req.session.currentChallenge = options.challenge;
-
-//           console.log(
-//             "Expected challenge from session:",
-//             req.session.currentChallenge
-//           );
-
-//           res.json(options);
-//         }
-//       );
-//     }
-//   );
-// });
-
-app.post("/markAttendance", (req, res) => {
-  console.log("📩 Marking attendance with body:", req.body);
-  const {
-    class_id,
-    student_username,
-    attendance_code,
-    student_lat,
-    student_lng,
-    auth_response, // WebAuthn response from client
-  } = req.body;
-
-  if (!auth_response) {
-    return res.status(400).json({ message: "Missing WebAuthn response" });
+    const R = 6371000; // meters
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
-  const getStudent = `SELECT id FROM users WHERE username = ? AND role = 'student'`;
+  const getUser = (userId) => {
+    return new Promise((resolve, reject) => {
+      db.query(
+        "SELECT id, username, credential_id, public_key FROM users WHERE id = ?",
+        [userId],
+        (err, result) => {
+          if (err || result.length === 0) return reject("User not found");
+          resolve(result[0]);
+        }
+      );
+    });
+  };
 
-  db.query(getStudent, [student_username], (err, studentResult) => {
-    if (err || studentResult.length === 0) {
-      console.error("Student lookup failed:", err);
+  try {
+    const student = await getUser(userId);
+
+    // Handle first-time registration
+    if (!student.credential_id || !student.public_key) {
+      const options = await generateRegistrationOptions({
+        rpName: "ClassTrack",
+        rpID: "classtrack.me",
+        // rpID: "localhost", // Use for local development
+        userID: Buffer.from(userId.toString()),
+        userName: student.username,
+        attestationType: "none",
+        authenticatorSelection: {
+          authenticatorAttachment: "platform",
+          userVerification: "required",
+          residentKey: "required",
+          requireResidentKey: "required",
+        },
+      });
+
+      req.session.currentRegistrationChallenge = options.challenge;
+
       return res
-        .status(500)
-        .json({ message: "Student lookup failed, try later" });
+        .status(206)
+        .json({ step: "register", registrationOptions: options });
     }
 
-    const student_id = studentResult[0].id;
-
-    const getSession = `
-      SELECT id, teacher_lat, teacher_lng FROM attendance_sessions 
-      WHERE class_id = ? AND attendance_code = ? AND is_active = 1
-    `;
-
-    db.query(getSession, [class_id, attendance_code], (err, sessionResult) => {
-      if (err || sessionResult.length === 0) {
-        console.error("Session lookup failed:", err);
-        return res
-          .status(404)
-          .json({ message: "Invalid or inactive session/code" });
-      }
-
-      const session = sessionResult[0];
-
-      const distance = haversineDistance(
-        session.teacher_lat,
-        session.teacher_lng,
-        student_lat,
-        student_lng
-      );
-
-      console.log(`Distance: ${distance.toFixed(2)} meters`);
-
-      if (distance > 200) {
-        return res
-          .status(403)
-          .json({ message: "You are not within 200m of the Class" });
-      }
-
-      const getAuth = `SELECT * FROM authenticators WHERE user_id = ?`;
-
-      db.query(getAuth, [student_id], async (err, authResult) => {
-        if (err || authResult.length === 0) {
-          console.error("Authenticator not found:", err);
-          return res.status(403).json({
-            message: "No registered authenticator",
-          });
+    // Location + session validation
+    db.query(
+      "SELECT id, teacher_lat, teacher_lng FROM attendance_sessions WHERE class_id = ? AND attendance_code = ? AND is_active = 1",
+      [class_id, attendance_code],
+      (err, sessionResult) => {
+        if (err || sessionResult.length === 0) {
+          return res.status(404).json({ message: "Invalid code/session" });
         }
 
-        const authenticator = authResult[0];
-        console.log("Authenticator found:", authenticator);
-
-        let verification;
-        try {
-          verification = await verifyAuthenticationResponse({
-            response: auth_response,
-            expectedChallenge: req.session.currentChallenge,
-            expectedOrigin: "http://localhost:5173", // Frontend origin
-            expectedRPID: "localhost", // Change to domain in prod
-            authenticator: {
-              credentialID: Buffer.from(
-                authenticator.credential_id,
-                "base64url"
-              ),
-              credentialPublicKey: Buffer.from(
-                authenticator.public_key,
-                "base64url"
-              ),
-              counter: authenticator.counter,
-            },
-          });
-        } catch (e) {
-          console.error("WebAuthn verification error:", e);
-          return res
-            .status(403)
-            .json({ message: "WebAuthn verification failed" });
-        }
-
-        if (!verification.verified) {
-          return res.status(403).json({
-            message: "Authentication failed. Cannot mark attendance.",
-          });
-        }
-
-        // Update counter
-        const newCounter = verification.authenticationInfo.newCounter;
-        db.query(
-          "UPDATE authenticators SET counter = ? WHERE id = ?",
-          [newCounter, authenticator.id],
-          (err) => {
-            if (err) console.error("Failed to update counter:", err);
-          }
+        const session = sessionResult[0];
+        const distance = haversineDistance(
+          session.teacher_lat,
+          session.teacher_lng,
+          student_lat,
+          student_lng
         );
+
+        console.log("distance:", distance);
+
+        if (distance > 100) {
+          return res.status(403).json({ message: "Not within 100 meters" });
+        }
+
+        // Check if already verified
+        if (!req.session.deviceVerified) {
+          return res.status(206).json({
+            step: "authenticate",
+            message: "WebAuthn auth required",
+          });
+        }
 
         // Check if already marked
-        const checkAttendance = `
-          SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?
-        `;
+        db.query(
+          "SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?",
+          [session.id, userId],
+          (err, existing) => {
+            if (existing.length > 0) {
+              return res.status(400).json({ message: "Already marked" });
+            }
 
-        db.query(checkAttendance, [session.id, student_id], (err, results) => {
-          if (err) {
-            console.error("Failed to check attendance record:", err);
-            return res
-              .status(500)
-              .json({ message: "Failed to check attendance" });
-          }
-
-          if (results.length > 0) {
-            return res.status(400).json({
-              message: "Your attendance has already been marked",
-            });
-          } else {
-            const insertAttendance = `
-              INSERT INTO attendance_records (session_id, student_id) VALUES (?, ?)
-            `;
             db.query(
-              insertAttendance,
-              [session.id, student_id],
-              (err, result) => {
-                if (err) {
-                  console.error("Failed to insert attendance:", err);
-                  return res
-                    .status(500)
-                    .json({ message: "Failed to mark attendance" });
-                }
-
-                console.log("Attendance marked successfully");
-                return res
-                  .status(200)
-                  .json({ message: "Attendance marked successfully" });
+              "INSERT INTO attendance_records (session_id, student_id) VALUES (?, ?)",
+              [session.id, userId],
+              (err) => {
+                if (err)
+                  return res.status(500).json({ message: "Insert failed" });
+                // Clear session
+                req.session.deviceVerified = false;
+                res.json({ message: "Attendance marked successfully" });
               }
             );
           }
-        });
-      });
-    });
-  });
+        );
+      }
+    );
+  } catch (err) {
+    console.error(" markAttendance error:", err);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
 });
 
-app.post("/startAttendance", (req, res) => {
+app.post("/startAttendance", verifyJWT, (req, res) => {
   const { class_id, teacher_lat, teacher_lng } = req.body;
   const today = new Date().toISOString().slice(0, 10);
 
-  const checkQuery = `
-    SELECT * FROM attendance_sessions 
-    WHERE class_id = ? 
-      AND DATE(started_at) = ? 
-  `;
+  // const checkQuery = `
+  //   SELECT * FROM attendance_sessions
+  //   WHERE class_id = ?
+  //     AND DATE(started_at) = ?
+  // `;
 
-  db.query(checkQuery, [class_id, today], (err, results) => {
-    if (err) {
-      console.error("DB error while checking today's session:", err);
+  // db.query(checkQuery, [class_id, today], (err, results) => {
+  //   if (err) {
+  //     console.error("DB error while checking today's session:", err);
+  //     return res
+  //       .status(500)
+  //       .json({ message: "DB error while checking session" });
+  //   }
+
+  // if (results.length > 0) {
+  //   return res
+  //     .status(400)
+  //     .json({ message: "You have already started a session today" });
+  // }
+
+  generateUniqueCode((err, code) => {
+    if (err)
       return res
         .status(500)
-        .json({ message: "DB error while checking session" });
-    }
+        .json({ message: "Error generating attendance code" });
 
-    if (results.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "You have already started a session today" });
-    }
-
-    generateUniqueCode((err, code) => {
-      if (err)
-        return res
-          .status(500)
-          .json({ message: "Error generating attendance code" });
-
-      const insertQuery = `
+    const insertQuery = `
       INSERT INTO attendance_sessions (class_id, attendance_code, teacher_lat, teacher_lng, is_active)
       VALUES (?, ?, ?, ?, 1)
     `;
-      db.query(
-        insertQuery,
-        [class_id, code, teacher_lat, teacher_lng],
-        (err, result) => {
-          if (err)
-            return res
-              .status(500)
-              .json({ message: "DB error while starting session" });
-          return res.status(200).json({ message: "Class started", code });
-        }
-      );
-    });
+    db.query(
+      insertQuery,
+      [class_id, code, teacher_lat, teacher_lng],
+      (err, result) => {
+        if (err)
+          return res
+            .status(500)
+            .json({ message: "DB error while starting session" });
+        return res.status(200).json({ message: "Class started", code });
+      }
+    );
   });
+  // });
 });
 
-app.post("/stopAttendance", (req, res) => {
+app.post("/stopAttendance", verifyJWT, (req, res) => {
   const { class_id } = req.body;
 
   const updateQuery = `UPDATE attendance_sessions SET is_active = 0 WHERE class_id = ? AND is_active = 1`;
@@ -692,12 +551,16 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-app.get("/GetClasses/:username", (req, res) => {
-  const username = req.params.username;
+app.get("/GetClasses", verifyJWT, (req, res) => {
+  console.log("Authenticated user:", req.user); // Add this
+  const userId = req.user.id;
+  const getUser = "SELECT id, role FROM users WHERE id = ?";
+  db.query(getUser, [userId], (err, userResult) => {
+    if (err) {
+      console.error("DB error (student classes):", err);
+      return res.status(500).json({ message: "DB error (classes)" });
+    }
 
-  const getUser = "SELECT id, role FROM users WHERE username = ?";
-  db.query(getUser, [username], (err, userResult) => {
-    if (err) return res.status(500).json({ message: "DB error (user)" });
     if (userResult.length === 0)
       return res.status(404).json({ message: "User not found" });
 
@@ -705,7 +568,7 @@ app.get("/GetClasses/:username", (req, res) => {
 
     if (user.role === "teacher") {
       const teacherQuery = `
-        SELECT c.id, c.name, c.class_code, u.name AS teacher_name,
+        SELECT c.id, c.name, c.class_code, u.username AS teacher_name,
                COUNT(cs.student_id) AS student_count
         FROM classes c
         JOIN users u ON c.teacher_id = u.id
@@ -719,7 +582,7 @@ app.get("/GetClasses/:username", (req, res) => {
       });
     } else if (user.role === "student") {
       const studentQuery = `
-        SELECT c.id, c.name, c.class_code, u.name AS teacher_name,
+        SELECT c.id, c.name, c.class_code, u.username AS teacher_name,
                COUNT(cs2.student_id) AS student_count
         FROM class_students cs
         JOIN classes c ON cs.class_id = c.id
@@ -732,12 +595,15 @@ app.get("/GetClasses/:username", (req, res) => {
         if (err) return res.status(500).json({ message: "DB error (classes)" });
         return res.status(200).json(result);
       });
+    } else {
+      return res.status(401).json({ message: "Token is invalid or expired" });
     }
   });
 });
 
-app.post("/JoinClass", (req, res) => {
-  const { class_code, student_username } = req.body;
+app.post("/JoinClass", verifyJWT, (req, res) => {
+  const { class_code } = req.body;
+  const student_username = req.user.username;
 
   // Get student ID
   const getStudent =
@@ -780,8 +646,9 @@ app.post("/JoinClass", (req, res) => {
   });
 });
 
-app.post("/CreateClass", (req, res) => {
-  const { name, teacher_username } = req.body;
+app.post("/CreateClass", verifyJWT, (req, res) => {
+  const { name } = req.body;
+  const teacher_username = req.user.username;
 
   const getTeacherQuery =
     "SELECT id FROM users WHERE username = ? AND role = 'teacher'";
@@ -811,79 +678,28 @@ app.post("/CreateClass", (req, res) => {
   });
 });
 
-app.post("/Login", (req, res) => {
-  const { username, password } = req.body;
+app.post("/UpdateAttendance", (req, res) => {
+  const { studentName, date, attendanceStatus } = req.body;
+  console.log("Updating attendance for:", studentName, date, attendanceStatus);
 
-  const query = "SELECT * FROM users WHERE username = ?";
-  db.query(query, [username], async (err, results) => {
-    if (err) return res.status(500).json({ message: "DB error" });
-
-    if (results.length === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const user = results[0];
-    const match = await bcrypt.compare(password, user.password_hash); // assuming password is hashed
-
-    if (!match) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    res.status(200).json({
-      message: "Login success",
-      name: user.name,
-      role: user.role,
-      username: user.username,
-    });
-  });
-});
-
-app.post("/SignUp", async (req, res) => {
-  const { name, role, username, password_hash } = req.body;
-
-  if (role !== "student" && role !== "teacher") {
-    return res
-      .status(400)
-      .send('Invalid role. Must be "student" or "teacher".');
-  }
-
-  try {
-    // Check if username already exists
-    const checkUserQuery = "SELECT * FROM users WHERE username = ?";
-    db.query(checkUserQuery, [username], async (err, results) => {
+  const insertQuery = `
+    INSERT INTO attendance_records (student_name, session_date, attendance_status)
+    VALUES (?, ?, ?)
+    `;
+  db.query(
+    insertQuery,
+    [studentName, date, attendanceStatus],
+    (err, result) => {
       if (err) {
-        console.error("Database error during username check:", err);
-        return res.status(500).send("Internal server error");
+        console.error("DB error while updating attendance:", err);
+        return res
+          .status(500)
+          .json({ message: "DB error while updating attendance" });
       }
-
-      if (results.length > 0) {
-        return res.status(409).json({
-          message: "Username already exists. Please choose another one.",
-        });
-      }
-
-      // Proceed with hashing and inserting
-      const hashedPassword = await bcrypt.hash(password_hash, 10);
-      const insertQuery = `
-        INSERT INTO users (name, username, password_hash, role)
-        VALUES (?, ?, ?, ?)
-      `;
-
-      db.query(
-        insertQuery,
-        [name, username, hashedPassword, role],
-        (err, result) => {
-          if (err) {
-            console.error("Database error during user insertion:", err);
-            return res.status(500).send("Internal server error");
-          }
-
-          res.send("User registered successfully.");
-        }
-      );
-    });
-  } catch (error) {
-    console.error("Hashing error:", error);
-    res.status(500).send("Internal server error");
-  }
+      console.log("Attendance updated successfully");
+      return res
+        .status(200)
+        .json({ message: "Attendance updated successfully" });
+    }
+  );
 });

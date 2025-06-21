@@ -4,38 +4,54 @@ import { PlusCircle, X } from "react-feather";
 import { User, Users, BarChart, Copy } from "react-feather";
 import { data } from "autoprefixer";
 import TypingText from "./Typing_text";
+// import { fetchWithAuth } from "../utils/fetchWithAuth";
+import api from "../utils/api"; // ✅ correct
+import Notification from "../components/Notification";
+import { CheckCircle } from "lucide-react";
+import { jwtDecode } from "jwt-decode"; // ✅ correct
 
-function Mainpage() {
+const getUserFromToken = () => {
+  const token = localStorage.getItem("token");
+  if (!token) return null;
+
+  try {
+    const decoded = jwtDecode(token);
+    console.log("Decoded token:", decoded);
+    return decoded; // { id, username, role, ... }
+  } catch (err) {
+    console.error("Invalid token:", err);
+    return null;
+  }
+};
+
+function Mainpage({ darkMode, toggleDarkMode }) {
   const [joinCode, setJoinCode] = useState("");
   const [className, setClassName] = useState("");
   const [isTeacher, setIsTeacher] = useState(false);
   const [username, setUsername] = useState("");
-  const [name, setName] = useState("");
   const [newClass, setNewClass] = useState(false);
   const [classes, setClasses] = useState([]);
+  const [showNotification, setShowNotification] = useState(false);
 
-  const fetchClasses = (uname) => {
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/GetClasses/${uname}`)
-      .then((res) => res.json())
-      .then((data) => setClasses(data))
-      .catch((err) => console.error("Failed to load classes", err));
-
-    console.log("Classes fetched:", classes); // Log the fetched classes
+  const fetchClasses = async () => {
+    try {
+      const { data } = await api.get("/GetClasses");
+      setClasses(data);
+    } catch (err) {
+      console.error("Failed to load classes", err);
+    }
   };
 
   useEffect(() => {
-    const role = localStorage.getItem("role");
-    setIsTeacher(role === "teacher");
-    setName(localStorage.getItem("name"));
-    setUsername(localStorage.getItem("username"));
-  }, []);
-
-  useEffect(() => {
-    if (username) {
-      console.log("Fetching classes for:", username);
-      fetchClasses(username);
+    const user = getUserFromToken();
+    if (user) {
+      setIsTeacher(user.role === "teacher");
+      setUsername(user.username);
+      fetchClasses();
+    } else {
+      alert("Invalid or missing token. Please login again.");
     }
-  }, [username]);
+  }, []);
 
   const addClass = () => {
     setNewClass(!newClass);
@@ -43,22 +59,19 @@ function Mainpage() {
 
   const handleJoinClass = async (e) => {
     e.preventDefault();
-    const student_username = localStorage.getItem("username");
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/JoinClass`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ class_code: joinCode, student_username }),
+      const res = await api.post("/JoinClass", {
+        class_code: joinCode,
       });
 
-      const result = await res.json();
+      const result = await res.data;
 
       if (res.status === 200) {
         alert("Successfully joined class!");
         setNewClass(false);
-        setJoinCode(""); // clear input
-        fetchClasses(student_username); // refresh cards
+        setJoinCode("");
+        fetchClasses(); // No need to pass username
       } else {
         alert(result.message || "Unable to join class.");
       }
@@ -71,28 +84,18 @@ function Mainpage() {
   const handleCreateClass = async (e) => {
     e.preventDefault();
 
-    const teacher_username = localStorage.getItem("username");
-    console.log("Sending:", className); // Add this line
-
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/CreateClass`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: className,
-          teacher_username,
-        }),
+      const res = await api.post("/CreateClass", {
+        name: className,
       });
 
-      const result = await res.json();
+      const result = await res.data;
 
       if (res.status === 200) {
         alert(`Class created successfully! Code: ${result.class_code}`);
         setNewClass(false);
-        setClassName(""); // reset
-        fetchClasses(teacher_username); // refresh cards
+        setClassName("");
+        fetchClasses(); // No need to pass teacher_username
       } else {
         alert(result.message || "Error creating class.");
       }
@@ -106,7 +109,7 @@ function Mainpage() {
     navigator.clipboard
       .writeText(code)
       .then(() => {
-        alert("Class code copied!");
+        setShowNotification(true);
       })
       .catch(() => {
         alert("Failed to copy class code.");
@@ -114,37 +117,17 @@ function Mainpage() {
   };
 
   return (
-    <div className="min-h-screen md:block hidden bg-gradient-to-r from-gray-900 to-gray-950">
-      <TypingText text={`Welcome ${name}!`} />
+    <div className="min-h-screen md:block hidden bg-gradient-to-r from-[#e0f7fa] to-[#f0faff] dark:from-gray-900 dark:to-gray-950 transition-colors">
+      <TypingText text={`Welcome ${username}!`} />
 
-      {/* <div className="flex justify-center p-8">
-        <Link to="/STClass">
-          <div className="hover:-translate-y-1 duration-300 transition-all">
-            // Card with Gradient Line 
-            <div className="min-w-[250px]">
-              <div className="flex justify-center items-center min-w-[250px] min-h-[250px] bg-gray-800 rounded-t-lg shadow-[0_0_15px_rgba(0,255,255,0.3)] hover:shadow-[0_0_25px_rgba(0,255,255,0.5)]">
-                <div className="text-[#D1D5DB] text-lg">Physics</div>
-              </div>
-              // Gradient Line (Directly attached to the card) 
-              <div className="bg-gradient-to-r from-cyan-500 to-blue-500 h-1 rounded-b-lg"></div>
-            </div>
-          </div>
-        </Link>
-      </div> */}
       <div className="grid xl:grid-cols-4 lg:grid-cols-3 md:grid-cols-2 gap-y-14 px-6 py-4">
-        {/* {classes.length === 0 && (
-          <div className="text-center text-gray-400 text-xl py-10">
-            You haven't joined or created any classes yet.
-          </div>
-        )} */}
         {classes.map((cls, index) => (
           <Link
             to={isTeacher ? `/TClass/${cls.id}` : `/STClass/${cls.id}`}
             key={index}
           >
             <div className="hover:-translate-y-2 duration-200 transition-all max-w-[300px] mx-auto">
-              <div className="bg-gray-800 rounded-lg overflow-hidden shadow-[0_0_12px_rgba(0,255,255,0.2)] hover:shadow-[0_0_20px_rgba(0,255,255,0.4)]">
-                {/* Header */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-md dark:shadow-[0_0_12px_rgba(0,255,255,0.2)] hover:dark:shadow-[0_0_20px_rgba(0,255,255,0.4)]">
                 <div className="h-20 bg-gradient-to-r from-cyan-500 to-blue-500 relative">
                   <div className="absolute top-3 right-3 flex items-center gap-1 bg-white/10 px-2 py-1 rounded-full backdrop-blur-sm">
                     <button
@@ -162,53 +145,54 @@ function Mainpage() {
                     </button>
                   </div>
 
-                  <div className="absolute -bottom-10 left-5 h-20 w-20 rounded-full bg-gray-900 border-4 border-gray-800 flex items-center justify-center shadow-md">
+                  <div className="absolute -bottom-10 left-5 h-20 w-20 rounded-full bg-gray-100 dark:bg-gray-900 dark:border-4 dark:border-gray-800 flex items-center justify-center shadow-md">
                     <div className="...">
-                      <span className="text-white font-bold text-4xl">
+                      <span className="text-gray-900 dark:text-white font-bold text-4xl">
                         {cls.name.charAt(0)}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Body */}
                 <div className="p-5 pt-12 space-y-4">
                   <div className="space-y-1 mt-2">
-                    <h3 className="text-2xl font-bold text-white">
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
                       {cls.name}
                     </h3>
                     {!isTeacher && (
-                      <span className="text-cyan-400">
+                      <span className="text-cyan-600 dark:text-cyan-400">
                         <User className="h-4 w-4 inline text-cyan-400 mr-1" />
                         {cls.teacher_name}
                       </span>
                     )}
                   </div>
 
-                  {/* Stats */}
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-gray-700/50 rounded-lg p-2 text-center">
+                    <div className="bg-gray-100 dark:bg-gray-700/50 rounded-lg p-2 text-center">
                       <div className="flex items-center justify-center mb-1">
                         <Users className="h-4 w-4 text-cyan-400 mr-1" />
-                        <span className="text-xs text-gray-300">Students</span>
+                        <span className="text-xs text-gray-700 dark:text-gray-300">
+                          Students
+                        </span>
                       </div>
-                      <div className="text-lg font-bold text-white">
+                      <div className="text-lg font-bold text-gray-900 dark:text-white">
                         {cls.student_count}
                       </div>
                     </div>
-                    <div className="bg-gray-700/50 rounded-lg p-2 text-center">
+                    <div className="bg-gray-100 dark:bg-gray-700/50 rounded-lg p-2 text-center">
                       <div className="flex items-center justify-center mb-1">
                         <BarChart className="h-4 w-4 text-cyan-400 mr-1" />
-                        <span className="text-xs text-gray-300">
+                        <span className="text-xs text-gray-700 dark:text-gray-300">
                           Attendance
                         </span>
                       </div>
-                      <div className="text-lg font-bold text-white">90%</div>
+                      <div className="text-lg font-bold text-gray-900 dark:text-white">
+                        90%
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Footer line */}
                 <div className="h-1.5 bg-gradient-to-r from-cyan-500 to-blue-500"></div>
               </div>
             </div>
@@ -226,15 +210,16 @@ function Mainpage() {
         </button>
       </div>
 
-      {/* Join Class */}
       {newClass && !isTeacher && (
         <div className="fixed inset-0 bg-black backdrop-blur-sm bg-opacity-50 flex items-center justify-center">
-          <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
+          <div className="bg-white dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">Join New Class</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Join New Class
+              </h2>
               <button
                 onClick={addClass}
-                className="text-gray-400 hover:text-white transition-colors"
+                className="text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
               >
                 <X size={24} />
               </button>
@@ -243,7 +228,7 @@ function Mainpage() {
               <div>
                 <label
                   htmlFor="classCode"
-                  className="block text-sm font-medium text-gray-400 mb-2"
+                  className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2"
                 >
                   Class Code
                 </label>
@@ -251,7 +236,7 @@ function Mainpage() {
                   type="text"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-300"
+                  className="w-full px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-300"
                   placeholder="Enter class code"
                   required
                 />
@@ -267,17 +252,16 @@ function Mainpage() {
         </div>
       )}
 
-      {/* Create Class */}
       {isTeacher && newClass && (
         <div className="fixed inset-0 bg-black backdrop-blur-sm bg-opacity-50 flex items-center justify-center">
-          <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
+          <div className="bg-white dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                 Create New Class
               </h2>
               <button
                 onClick={addClass}
-                className="text-gray-400 hover:text-white transition-colors"
+                className="text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
               >
                 <X size={24} />
               </button>
@@ -286,7 +270,7 @@ function Mainpage() {
               <div>
                 <label
                   htmlFor="ClassName"
-                  className="block text-sm font-medium text-gray-400 mb-2"
+                  className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2"
                 >
                   Create a Class Name
                 </label>
@@ -294,7 +278,7 @@ function Mainpage() {
                   type="text"
                   value={className}
                   onChange={(e) => setClassName(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-300"
+                  className="w-full px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-300"
                   placeholder="Class name"
                   required
                 />
@@ -308,6 +292,14 @@ function Mainpage() {
             </form>
           </div>
         </div>
+      )}
+      {showNotification && (
+        <Notification
+          icon={<CheckCircle className="w-5 h-5 text-white" />}
+          message="Class Code Copied!"
+          color="#10b981" // tailwind green-500
+          onClose={() => setShowNotification(false)}
+        />
       )}
     </div>
   );

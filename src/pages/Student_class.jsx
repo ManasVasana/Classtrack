@@ -7,13 +7,12 @@ import {
   startAuthentication,
   startRegistration,
 } from "@simplewebauthn/browser";
-import base64url from "base64url";
+import api from "../utils/api";
 
 axios.defaults.withCredentials = true;
 
 function StudentClass() {
   const { id: class_id } = useParams();
-  const student_username = localStorage.getItem("username");
 
   const data = [
     { name: "Present", value: 75, color: "#22c55e" },
@@ -40,111 +39,95 @@ function StudentClass() {
   const onPieEnter = (_, index) => setActiveIndex(index);
   const onPieLeave = () => setActiveIndex(null);
 
-const handleAttendanceSubmit = async (e) => {
-  e.preventDefault();
+  const handleAttendanceSubmit = async (e) => {
+    e.preventDefault();
 
-  if (!attendanceCode) return alert("Please enter the code");
+    if (!attendanceCode?.trim())
+      return alert("Please enter the attendance code");
+    if (!navigator.geolocation) return alert("📍 Geolocation not supported");
 
-  if (!navigator.geolocation) {
-    return alert("Geolocation is not supported by your browser");
-  }
+    setStatus(null);
 
-  navigator.geolocation.getCurrentPosition(
-    async (position) => {
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        console.log("📍 Location:", lat, lng);
 
-      try {
-        // Step 1: Request authentication options
-        const optionsRes = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}/generate-authentication-options`,
-          { username: student_username },
-          { withCredentials: true }
-        );
-
-        const options = optionsRes.data;
-
-        // Step 2: If user has no credentials, do registration
-        if (options.registrationRequired) {
-          const regOptionsRes = await axios.post(
-            `${import.meta.env.VITE_API_BASE_URL}/generate-registration-options`,
-            { username: student_username },
-            { withCredentials: true }
-          );
-
-          const regOptions = regOptionsRes.data;
-
-          // ⚠️ Ensure proper config is enforced here for device-resident passkey
-          regOptions.authenticatorSelection = {
-            authenticatorAttachment: "platform",
-            userVerification: "required",
-            residentKey: "required",
-            requireResidentKey: true,
-          };
-          regOptions.attestation = "none";
-
-          const attestationResponse = await startRegistration({optionsJSON: regOptions});
-
-          await axios.post(
-            `${import.meta.env.VITE_API_BASE_URL}/verify-registration`,
-            {
-              username: student_username,
-              attestationResponse,
-            },
-            { withCredentials: true }
-          );
-
-          alert("✅ Device registered! Retrying attendance...");
-          return handleAttendanceSubmit(e); // Re-attempt authentication
-        }
-
-        // Step 3: Authenticate using registered passkey
-        const authResponse = await startAuthentication({optionsJSON: options});
-
-        // Step 4: Submit attendance
-        const res = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}/markAttendance`,
-          {
+        try {
+          // Step 1: Try initial attendance attempt
+          const res = await api.post("/markAttendance", {
             class_id,
-            student_username,
             attendance_code: attendanceCode,
             student_lat: lat,
             student_lng: lng,
-            auth_response: authResponse,
-          },
-          { withCredentials: true }
-        );
+          });
 
-        setStatus({ success: true, message: res.data.message });
-      } catch (err) {
-        console.error("Attendance error:", err);
+          // Case 1: Already registered and attendance marked
+          if (res.status === 200) {
+            return setStatus({ success: true, message: res.data.message });
+          }
 
-        const serverMessage =
-          err?.response?.data?.message || err.message || "Attendance failed";
+          // Case 2: Registration required
+          if (res.status === 206 && res.data.step === "register") {
+            console.log("Starting registration...");
+            const attResp = await startRegistration({
+              optionsJSON: res.data.registrationOptions,
+            });
+            await api.post("/verify-registration", attResp);
+            alert("Registered successfully. Proceeding to authenticate...");
+          }
 
-        setStatus({ success: false, message: serverMessage });
+          const authOptsRes = await api.post(
+            "/generate-authentication-options"
+          );
+          const authResp = await startAuthentication({
+            optionsJSON: authOptsRes.data,
+          });
+
+          await api.post("/verify-authentication", { auth_response: authResp });
+
+          const finalRes = await api.post("/markAttendance", {
+            class_id,
+            attendance_code: attendanceCode,
+            student_lat: lat,
+            student_lng: lng,
+          });
+
+          setStatus({ success: true, message: finalRes.data.message });
+        } catch (err) {
+          console.error("Error:", err);
+          const msg = err?.response?.data?.message || err.message;
+          setStatus({ success: false, message: msg });
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            alert("Please allow location access to mark attendance.");
+            break;
+          case error.POSITION_UNAVAILABLE:
+            alert("Location unavailable. Please try again.");
+            break;
+          case error.TIMEOUT:
+            alert("Location request timed out. Try again.");
+            break;
+          default:
+            alert("Unknown location error.");
+        }
       }
-    },
-    () => alert("Unable to retrieve your location"),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-  );
-};
-
+    );
+  };
 
   return (
-    <div className="bg-gradient-to-r from-gray-900 to-gray-950 min-h-screen p-8 flex flex-col gap-8 md:flex-row">
+    <div className="bg-gradient-to-r from-[#f0f9ff] to-[#e8f3ff] dark:from-gray-900 dark:to-gray-950 min-h-screen p-8 flex flex-col gap-8 md:flex-row">
       <div className="flex flex-col gap-8 md:w-[40%] w-full">
         {/* Attendance Piechart */}
         <div className="flex items-center justify-center">
-          <div
-            className="w-full bg-gray-800/80 backdrop-blur-lg text-white border border-white/10 shadow-2xl 
-          hover:shadow-3xl transition-all duration-500 ease-in-out rounded-xl overflow-hidden"
-          >
+          <div className="w-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg text-gray-900 dark:text-white border border-gray-300 dark:border-white/10 shadow-lg transition-all duration-300 rounded-xl overflow-hidden">
             <div className="p-6">
-              <h2
-                className="text-2xl font-bold text-center text-white bg-clip-text text-transparent bg-gradient-to-r 
-              from-white to-gray-300 mb-4"
-              >
+              <h2 className="text-2xl font-bold text-center bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 mb-4">
                 Student Attendance Report
               </h2>
 
@@ -193,7 +176,7 @@ const handleAttendanceSubmit = async (e) => {
                       className="w-4 h-4 rounded-full mr-2"
                       style={{ backgroundColor: entry.color }}
                     />
-                    <span className="text-gray-100 text-base">
+                    <span className="text-gray-700 dark:text-gray-100 text-base">
                       {entry.name}
                     </span>
                   </div>
@@ -204,9 +187,9 @@ const handleAttendanceSubmit = async (e) => {
         </div>
 
         {/* Live Class Box */}
-        <div className="w-full bg-gray-800 rounded-xl shadow-lg shadow-cyan-500/20 h-fit sticky top-8">
-          <div className="p-6 border-b border-gray-800">
-            <div className="flex items-center gap-2 text-cyan-400 text-2xl font-semibold">
+        <div className="w-full border border-gray-300 dark:border-white/10  bg-white dark:bg-gray-800 rounded-xl shadow-lg dark:shadow-cyan-500/20 h-fit sticky top-8">
+          <div className="p-6 border-b border-gray-300 dark:border-gray-800">
+            <div className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 text-2xl font-semibold">
               <Clock className="w-6 h-6" />
               Live Class
             </div>
@@ -215,7 +198,7 @@ const handleAttendanceSubmit = async (e) => {
             <div className="space-y-6">
               <form className="space-y-6" onSubmit={handleAttendanceSubmit}>
                 <div className="space-y-4">
-                  <label className="text-gray-400 block text-lg">
+                  <label className="text-gray-600 dark:text-gray-400 block text-lg">
                     Attendance Code
                   </label>
                   <input
@@ -223,7 +206,7 @@ const handleAttendanceSubmit = async (e) => {
                     value={attendanceCode}
                     onChange={(e) => setAttendanceCode(e.target.value)}
                     placeholder="Enter attendance code"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 h-12 text-lg text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-4 h-12 text-lg text-gray-900 dark:text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   />
                 </div>
                 <button
@@ -236,7 +219,7 @@ const handleAttendanceSubmit = async (e) => {
                 {status && (
                   <div
                     className={`text-center text-lg mt-4 ${
-                      status.success ? "text-green-400" : "text-red-400"
+                      status.success ? "text-green-500" : "text-red-500"
                     }`}
                   >
                     {status.message}
@@ -250,10 +233,10 @@ const handleAttendanceSubmit = async (e) => {
 
       <div className="md:w-[60%] w-full mx-auto">
         {/* Card Container */}
-        <div className="bg-gray-800/50 rounded-xl shadow-lg shadow-cyan-500/10 backdrop-blur-sm border border-gray-700/50">
+        <div className="bg-white/60 dark:bg-gray-800/50 rounded-xl shadow-lg shadow-cyan-500/10 backdrop-blur-sm border border-gray-300 dark:border-gray-700/50">
           {/* Card Header */}
-          <div className="p-6 border-b border-gray-700/50">
-            <h2 className="text-xl text-cyan-400 font-semibold">
+          <div className="p-6 border-b border-gray-300 dark:border-gray-700/50">
+            <h2 className="text-xl text-cyan-600 dark:text-cyan-400 font-semibold">
               Attendance History
             </h2>
           </div>
@@ -261,23 +244,25 @@ const handleAttendanceSubmit = async (e) => {
           <div className="p-6">
             <div className="overflow-auto">
               <table className="w-full">
-                <thead className="sticky top-0 bg-gray-800/90 backdrop-blur-sm">
-                  <tr className="border-b border-gray-800">
-                    <th className="py-4 px-6 text-left text-gray-400 text-lg">
+                <thead className="sticky top-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                  <tr className="border-b border-gray-300 dark:border-gray-800">
+                    <th className="py-4 px-6 text-left text-gray-600 dark:text-gray-400 text-lg">
                       Date
                     </th>
-                    <th className="py-4 px-6 text-left text-gray-400 text-lg">
+                    <th className="py-4 px-6 text-left text-gray-600 dark:text-gray-400 text-lg">
                       Subject
                     </th>
-                    <th className="py-4 px-6 text-left text-gray-400 text-lg">
+                    <th className="py-4 px-6 text-left text-gray-600 dark:text-gray-400 text-lg">
                       Status
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors">
-                    <td className="py-4 px-6 text-lg text-white">22/12/2024</td>
-                    <td className="py-4 px-6 text-lg text-white">
+                  <tr className="border-b border-gray-300 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors">
+                    <td className="py-4 px-6 text-lg text-gray-900 dark:text-white">
+                      22/12/2024
+                    </td>
+                    <td className="py-4 px-6 text-lg text-gray-900 dark:text-white">
                       Mathematics
                     </td>
                     <td className="py-4 px-6">
@@ -287,9 +272,11 @@ const handleAttendanceSubmit = async (e) => {
                       </span>
                     </td>
                   </tr>
-                  <tr className="border-b border-gray-800 hover:bg-gray-800/50 transition-colors">
-                    <td className="py-4 px-6 text-lg text-white">22/12/2024</td>
-                    <td className="py-4 px-6 text-lg text-white">
+                  <tr className="border-b border-gray-300 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800/50 transition-colors">
+                    <td className="py-4 px-6 text-lg text-gray-900 dark:text-white">
+                      22/12/2024
+                    </td>
+                    <td className="py-4 px-6 text-lg text-gray-900 dark:text-white">
                       Mathematics
                     </td>
                     <td className="py-4 px-6">
@@ -305,11 +292,12 @@ const handleAttendanceSubmit = async (e) => {
           </div>
         </div>
       </div>
+
       {data.needsConfirmation && (
-        <div className="fixed inset-0 bg-black backdrop-blur-sm bg-opacity-50 flex items-center justify-center">
-          <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-white dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-white">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                 Create New Class
               </h2>
             </div>
@@ -317,7 +305,7 @@ const handleAttendanceSubmit = async (e) => {
               <div>
                 <label
                   htmlFor="ClassName"
-                  className="block text-sm font-medium text-gray-400 mb-2"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-2"
                 >
                   Create a Class Name
                 </label>
@@ -325,7 +313,7 @@ const handleAttendanceSubmit = async (e) => {
                   type="text"
                   value={className}
                   onChange={(e) => setClassName(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-300"
+                  className="w-full px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all duration-300"
                   placeholder="Class name"
                   required
                 />

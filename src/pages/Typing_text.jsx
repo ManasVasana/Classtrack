@@ -15,7 +15,7 @@ const TypingText = ({ text }) => {
   }, [text]);
 
   return (
-    <div className="text-white text-3xl font-bold p-8 flex justify-center">
+    <div className="text-gray-700 dark:text-white text-3xl font-bold p-8 flex justify-center">
       {displayedText}
     </div>
   );

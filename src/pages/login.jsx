@@ -4,35 +4,39 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 function Login() {
-
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ username: "", password: "" });
 
   const handleLogin = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/Login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: formData.username,
-          password: formData.password,
-        }),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/Login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            username: formData.username,
+            password: formData.password,
+          }),
+        }
+      );
 
       const result = await response.json();
+      console.log("🔁 Login response:", result);
 
-      if (response.status === 200) {
+      if (response.status === 200 ) {
+        localStorage.setItem("token", result.token);
         localStorage.setItem("name", result.name);
         localStorage.setItem("username", result.username);
         localStorage.setItem("role", result.role);
         navigate("/MainPage");
       } else {
-        alert("Invalid credentials");
+        alert( "Invalid credentials");
       }
     } catch (error) {
-      console.error("Error during login:", error);
+      console.error("⚠️ Error during login:", error);
       alert("Server error");
     }
   };
@@ -174,7 +178,7 @@ function Login() {
               <p className="text-gray-400">Don't have an account?</p>
               <a
                 onClick={() => navigate("/SignUp")}
-                className="text-cyan-400 hover:text-cyan-500 transition duration-300 inline-block relative group"
+                className="text-cyan-400 hover:text-cyan-500 hover:cursor-pointer transition duration-300 inline-block relative group"
               >
                 SignUp
                 <span className="absolute left-0 bottom-0 w-full h-0.5 bg-cyan-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></span>

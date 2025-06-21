@@ -7,19 +7,24 @@ import {
   FaUserGraduate,
   FaChalkboardTeacher,
   FaChevronDown,
+  FaEnvelope,
 } from "react-icons/fa";
 import Axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { BadgeCheck } from "lucide-react";
+import Notification from "../components/Notification";
 
 function SignUp() {
+  const [showNotification, setShowNotification] = useState(false);
+
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("");
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [errors, setErrors] = useState({});
+  const [email, setEmail] = useState("");
 
   const toggleRoleDropdown = () => {
     setIsRoleDropdownOpen(!isRoleDropdownOpen);
@@ -34,9 +39,12 @@ function SignUp() {
   const validateFields = () => {
     const newErrors = {};
     if (!role) newErrors.role = "Please select a role.";
-    if (!name) newErrors.name = "Full name is required.";
     if (!username) newErrors.username = "Username is required.";
     if (!password) newErrors.password = "Password is required.";
+    if (!email) newErrors.email = "Email is required.";
+    else if (!/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = "Email format is invalid.";
+    }
     return newErrors;
   };
 
@@ -49,28 +57,37 @@ function SignUp() {
     }
 
     const data = {
-      name,
       username,
       password_hash: password,
       role,
+      email,
     };
-    
-    console.log("Sending data:", data); 
+
+    console.log("Sending data:", data);
 
     try {
-      const response = await Axios.post(`${import.meta.env.VITE_API_BASE_URL}/SignUp`, data);
-      console.log('Sending data:', data);
-    
+      const response = await Axios.post(
+        `${import.meta.env.VITE_API_BASE_URL}/SignUp`,
+        data
+      );
+      console.log("Sending data:", data);
+
       if (response.status === 200) {
-        navigate("/");
-      } 
+        setShowNotification(true);
+        setTimeout(() => {
+          navigate("/");
+        }, 3000);
+      }
     } catch (err) {
       console.error(err);
-    
+
       if (err.response) {
         if (err.response.status === 409) {
           // Handle conflict: username already exists
-          setErrors((prev) => ({ ...prev, username: err.response.data.message || "Username already exists." }));
+          setErrors((prev) => ({
+            ...prev,
+            username: err.response.data.message || "Username already exists.",
+          }));
         } else if (err.response.data?.error) {
           // Handle other known server errors
           setErrors((prev) => ({ ...prev, username: err.response.data.error }));
@@ -81,7 +98,6 @@ function SignUp() {
         alert("Unable to reach server. Please check your connection.");
       }
     }
-    
   };
 
   return (
@@ -160,19 +176,19 @@ function SignUp() {
                 )}
               </div>
 
-              {/* Full Name */}
+              {/* Email */}
               <div>
                 <div className="flex items-center bg-gray-700 border border-gray-600 rounded-lg focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400 transition duration-300 px-3 py-2">
-                  <FaUser className="text-cyan-400 mr-3" />
+                  <FaEnvelope className="text-cyan-400 mr-3" />
                   <input
-                    onChange={(e) => setName(e.target.value)}
-                    type="text"
-                    placeholder="Full Name"
+                    onChange={(e) => setEmail(e.target.value)}
+                    type="email"
+                    placeholder="Enter your email"
                     className="bg-transparent outline-none text-white w-full"
                   />
                 </div>
                 {errors.name && (
-                  <p className="text-red-400 text-sm mt-1">{errors.name}</p>
+                  <p className="text-red-400 text-sm mt-1">{errors.email}</p>
                 )}
               </div>
 
@@ -228,8 +244,8 @@ function SignUp() {
           <div className="text-center pb-8">
             <p className="text-gray-400">Already have an account?</p>
             <a
-              onClick={() => navigate("/")}
               className="text-cyan-400 hover:text-cyan-500 hover:cursor-pointer transition duration-300 inline-block relative group"
+              onClick={() => navigate("/")}
             >
               Log In
               <span className="absolute left-0 bottom-0 w-full h-0.5 bg-cyan-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></span>
@@ -237,6 +253,14 @@ function SignUp() {
           </div>
         </div>
       </div>
+      {showNotification && (
+        <Notification
+          icon={<BadgeCheck className="w-5 h-5 text-white" />}
+          message="Account created successfully! Redirecting to login..."
+          color="#10b981" // tailwind green-500
+          onClose={() => setShowNotification(false)}
+        />
+      )}
     </div>
   );
 }
