@@ -40,13 +40,24 @@ const {
 const { is } = require("type-is");
 
 const allowedOrigins = [
-  "http://localhost:5173", // for local dev
-  "https://classtrack.vercel.app", // for production custom domain (optional)
-  "https://classtrack-git-main-manasvasanas-projects.vercel.app",
-  "www.classtrack.me", // for production vercel domain
+  "http://localhost:5173",                  // dev
+  "https://classtrack.vercel.app",          // optional preview
+  "https://classtrack-chi.vercel.app",      // optional preview
+  "https://www.classtrack.me",              // ✅ your production domain
 ];
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true, // ✅ important for cookies (sessions, JWTs)
+  })
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
