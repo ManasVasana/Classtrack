@@ -12,7 +12,7 @@ import {
 import Axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { BadgeCheck } from "lucide-react";
-import Notification from "../components/Notification";
+import Notification from "../components/notification";
 
 function SignUp() {
   const [showNotification, setShowNotification] = useState(false);
