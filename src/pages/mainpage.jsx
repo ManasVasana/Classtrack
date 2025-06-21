@@ -6,7 +6,7 @@ import { data } from "autoprefixer";
 import TypingText from "./Typing_text";
 // import { fetchWithAuth } from "../utils/fetchWithAuth";
 import api from "../utils/api"; // ✅ correct
-import Notification from "../components/Notification";
+import Notification from "../components/notification";
 import { CheckCircle } from "lucide-react";
 import { jwtDecode } from "jwt-decode"; // ✅ correct
 
