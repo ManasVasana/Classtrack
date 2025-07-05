@@ -284,13 +284,13 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
         }
         const options = await generateAuthenticationOptions({
           rpID: "classtrack.me",
-          allowCredentials: [
-            {
-              id: credential_id,
-              type: "public-key",
-            },
-          ],
-          userVerification: "preferred",
+          // allowCredentials: [
+          //   {
+          //     id: credential_id,
+          //     type: "public-key",
+          //   },
+          // ],
+          // userVerification: "preferred",
         });
 
         console.log("Generated options:", options);
