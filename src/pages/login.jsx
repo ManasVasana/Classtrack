@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { LoadingButton } from "../components/Loading";
 
 function Login() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ username: "", password: "" });
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    setLoading(true); 
     try {
       const response = await fetch(
         `${import.meta.env.VITE_API_BASE_URL}/Login`,
@@ -24,20 +27,21 @@ function Login() {
       );
 
       const result = await response.json();
-      console.log("🔁 Login response:", result);
 
-      if (response.status === 200 ) {
+      if (response.status === 200) {
         localStorage.setItem("token", result.token);
         localStorage.setItem("name", result.name);
         localStorage.setItem("username", result.username);
         localStorage.setItem("role", result.role);
         navigate("/MainPage");
       } else {
-        alert( "Invalid credentials");
+        alert("Invalid credentials");
       }
     } catch (error) {
-      console.error("⚠️ Error during login:", error);
+      console.error("Error during login:", error);
       alert("Server error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -46,8 +50,8 @@ function Login() {
       <div className="w-full max-w-4xl">
         <div className="bg-gray-800 shadow-2xl rounded-3xl overflow-hidden animate-fade-in flex flex-col md:flex-row">
           {/* Left Panel */}
-          <div className="bg-gray-700 w-full md:w-2/5 p-8">
-            <h1 className="text-4xl font-bold text-cyan-400 mb-6">
+          <div className="bg-gray-700 hidden sm:block w-full md:w-2/5 p-8">
+            <h1 className="text-3xl sm:text-4xl font-bold text-cyan-400 mb-6">
               ClassTrack
             </h1>
             <p className="text-white mb-8">
@@ -168,10 +172,19 @@ function Login() {
                 </a>
               </div>
               <button
-                onClick={() => handleLogin()}
-                className="w-full py-2 border-none bg-cyan-400 hover:bg-cyan-500 text-gray-900 hover:scale-105 rounded-lg font-semibold transition duration-300 transform"
+                onClick={handleLogin}
+                disabled={loading}
+                className={`w-full py-2 border-none ${
+                  loading
+                    ? "bg-cyan-300 cursor-not-allowed"
+                    : "bg-cyan-400 hover:bg-cyan-500 hover:scale-105"
+                } text-gray-900 rounded-lg font-semibold transition duration-300 transform`}
               >
-                Login
+                {loading ? (
+                  <LoadingButton text={"Logging in"} />
+                ) : (
+                  "Login"
+                )}
               </button>
             </div>
             <div className="mt-4 text-center">

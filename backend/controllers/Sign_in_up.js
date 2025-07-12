@@ -5,7 +5,7 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const base64url = require("base64url");
 const cookieParser = require("cookie-parser");
-app.use(cookieParser()); // <== add this above session
+app.use(cookieParser());
 const session = require("express-session");
 const jwt = require("jsonwebtoken");
 const verifyJWT = require("../middleware/auth.js"); 
@@ -21,7 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 app.post("/Logout", (req, res) => {
   // res.clearCookie("refreshToken", {
   //   httpOnly: true,
-  //   secure: true, // set to true in production with HTTPS
+  //   secure: true, 
   //   sameSite: "Strict",
   // });
 
@@ -52,20 +52,17 @@ app.post("/Logout", (req, res) => {
 
 
 app.post("/Login", (req, res) => {
-  console.log("📥 Login endpoint hit");
 
   const { username, password } = req.body;
 
   const query = "SELECT * FROM users WHERE username = ?";
   db.query(query, [username], async (err, results) => {
-    console.log("🧠 DB query complete");
 
     if (err) return res.status(500).json({ message: "DB error" });
     if (results.length === 0)
       return res.status(401).json({ message: "User not found" });
 
     const user = results[0];
-    console.log("🔍 User found:", user.role);
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch)
       return res.status(401).json({ message: "Invalid Password" });
@@ -84,11 +81,11 @@ app.post("/Login", (req, res) => {
       //   expiresIn: "7d", // 7 days
       // });
     } catch (err) {
-      console.error("❌ JWT Signing Error:", err);
+      console.error("JWT Signing Error:", err);
       return res.status(500).json({ message: "Token generation failed" });
     }
 
-    // 🔐 Send refresh token as secure HTTP-only cookie
+    // Send refresh token as secure HTTP-only cookie
     // res.cookie("refreshToken", refreshToken, {
     //   httpOnly: true,
     //   secure: false, // set to true if using HTTPS in production
@@ -96,7 +93,7 @@ app.post("/Login", (req, res) => {
     //   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     // });
 
-    console.log("✅ Access token:", accessToken);
+    console.log("Access token:", accessToken);
 
     res.status(200).json({
       auth: true,
@@ -119,7 +116,6 @@ app.post("/SignUp", async (req, res) => {
   }
 
   try {
-    // Check if username already exists
     const checkUserQuery = "SELECT * FROM users WHERE username = ?";
     db.query(checkUserQuery, [username], async (err, results) => {
       if (err) {
@@ -133,7 +129,7 @@ app.post("/SignUp", async (req, res) => {
         });
       }
 
-      // Proceed with hashing and inserting
+      // Proceeding with hashing and inserting if user does not exist
       const hashedPassword = await bcrypt.hash(password_hash, 10);
       const insertQuery = `
         INSERT INTO users (username, password_hash, role, email)

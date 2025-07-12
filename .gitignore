@@ -7,6 +7,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+backup.jsx
+backup1.jsx
 node_modules
 .env
 dist

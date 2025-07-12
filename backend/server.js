@@ -11,11 +11,23 @@ const jwt = require("jsonwebtoken");
 const verifyJWT = require("./middleware/auth");
 const authRoutes = require("./controllers/Sign_in_up.js");
 const GetUserInfo = require("./routes/profile.js");
+const nodemailer = require("nodemailer");
 const { isoBase64URL } = require("@simplewebauthn/server/helpers");
+const GetStudentClassDetails = require("./routes/Student_class.js");
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} = require("@simplewebauthn/server");
+const { is } = require("type-is");
+const { async } = require("postcss-js");
 
 require("dotenv").config();
 
 const db = require("./utils/db.js");
+
+const isLocalTesting = process.env.REACT_APP_LOCAL_TESTING === "true";
 
 app.use(
   session({
@@ -24,26 +36,18 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: true, // true if HTTPS
+      secure: isLocalTesting ? false : true,
       httpOnly: true,
-      sameSite: "none", // try lax first, if still fails then 'none'
+      sameSite: "none",
     },
   })
 );
 
-const {
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
-  generateAuthenticationOptions,
-  verifyAuthenticationResponse,
-} = require("@simplewebauthn/server");
-const { is } = require("type-is");
-
 const allowedOrigins = [
-  "http://localhost:5173",                  // dev
-  "https://classtrack.vercel.app",          // optional preview
-  "https://classtrack-chi.vercel.app",      // optional preview
-  "https://www.classtrack.me",              // ✅ your production domain
+  "http://localhost:5173", // local development
+  "https://classtrack.vercel.app", // optional preview
+  "https://classtrack-chi.vercel.app", // optional preview
+  "https://www.classtrack.me", // production
 ];
 
 app.use(
@@ -55,7 +59,7 @@ app.use(
         callback(new Error("Not allowed by CORS"));
       }
     },
-    credentials: true, // ✅ important for cookies (sessions, JWTs)
+    credentials: true, // for cookies (sessions, JWTs)
   })
 );
 
@@ -82,19 +86,20 @@ function generateUniqueCode(callback) {
       [code],
       (err, results) => {
         if (err) return callback(err);
-        if (results.length > 0) return tryGenerate(); // try again
-        return callback(null, code); // found unique
+        if (results.length > 0) return tryGenerate();
+        return callback(null, code); 
       }
     );
   }
 
   tryGenerate();
 }
-app.use("/", authRoutes); // Routes mounted on root
-app.use("/", GetUserInfo); // Routes mounted on root
+app.use("/", authRoutes);
+app.use("/", GetUserInfo); 
+app.use("/", GetStudentClassDetails); 
 
 app.get("/isClassActive", verifyJWT, (req, res) => {
-  const class_id = req.query.class_id; // ✅ FIXED
+  const class_id = req.query.class_id; 
   const query = `SELECT is_active, attendance_code
 FROM attendance_sessions 
 WHERE class_id = ? 
@@ -176,29 +181,36 @@ app.get("/getTClass_attend_table_details/:class_id", verifyJWT, (req, res) => {
   });
 });
 
-app.post("/generate-registration-options", verifyJWT, (req, res) => {
-  const { id, username } = req.user;
+// app.post("/generate-registration-options", verifyJWT, (req, res) => {
+//   console.log("Generating registration options for user:", req.user);
+//   const { id, username } = req.user;
 
-  const options = generateRegistrationOptions({
-    rpName: "ClassTrack",
-    rpID: "classtrack.me", // Use your production domain here
-    // rpID: "localhost", // Use for local development
-    userID: Buffer.from(userId.toString()),
+//   const options = generateRegistrationOptions({
+//     rpName: "ClassTrack",
+//     // rpID: "classtrack.me", 
+//     rpID: "localhost", // Use for local development
+//     userID: Buffer.from(userId.toString()),
 
-    userName: username,
-    attestationType: "none",
-    authenticatorSelection: {
-      userVerification: "preferred",
-      residentKey: "discouraged",
-    },
-  });
+//     userName: username,
+//     attestationType: "none",
+//     authenticatorSelection: {
+//       userVerification: "preferred",
+//       residentKey: "discouraged",
+//     },
+//   });
 
-  req.session.challenge = options.challenge;
-  res.json(options);
-});
+//   req.session.challenge = options.challenge;
+//   console.log("Generated registration options:", options);
+//   console.log("Session challenge:", req.session.challenge);
+//   res.json(options);
+// });
 
 app.post("/verify-registration", verifyJWT, async (req, res) => {
   console.log(" Registration response received:", req.body);
+  console.log(
+    "challenge:",
+    req.session.currentRegistrationChallenge
+  );
 
   const attestationResponse = req.body;
 
@@ -211,10 +223,8 @@ app.post("/verify-registration", verifyJWT, async (req, res) => {
     const verification = await verifyRegistrationResponse({
       response: attestationResponse,
       expectedChallenge: req.session.currentRegistrationChallenge,
-      // expectedOrigin: "http://localhost:5173",
-      // expectedRPID: "localhost",
-      expectedOrigin: "https://www.classtrack.me",
-      expectedRPID: "classtrack.me",
+      expectedOrigin: isLocalTesting ? "http://localhost:5173" : "https://www.classtrack.me",
+      expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
     });
 
     console.log("Verification result:", verification);
@@ -283,7 +293,7 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
           throw new Error("credential_id must be a string in base64url format");
         }
         const options = await generateAuthenticationOptions({
-          rpID: "classtrack.me",
+          rpID: isLocalTesting ? "localhost" : "classtrack.me", 
           // allowCredentials: [
           //   {
           //     id: credential_id,
@@ -309,6 +319,7 @@ app.post("/verify-authentication", verifyJWT, (req, res) => {
   const userId = req.user.id;
   const { auth_response } = req.body;
   const challenge = req.session.challenge;
+  console.log("challenge:", req.session.challenge);
 
   db.query(
     "SELECT credential_id, public_key, auth_counter FROM users WHERE id = ?",
@@ -327,10 +338,8 @@ app.post("/verify-authentication", verifyJWT, (req, res) => {
 
       const verification = await verifyAuthenticationResponse({
         expectedChallenge: challenge,
-        // expectedOrigin: "http://localhost:5173",
-        // expectedRPID: "localhost",
-        expectedOrigin: "https://www.classtrack.me",
-        expectedRPID: "classtrack.me",
+        expectedOrigin: isLocalTesting ? "http://localhost:5173" : "https://www.classtrack.me",
+        expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
         response: auth_response,
         credential: {
           id: credential_id,
@@ -402,8 +411,7 @@ app.post("/markAttendance", verifyJWT, async (req, res) => {
     if (!student.credential_id || !student.public_key) {
       const options = await generateRegistrationOptions({
         rpName: "ClassTrack",
-        rpID: "classtrack.me",
-        // rpID: "localhost", // Use for local development
+        rpID: isLocalTesting ? "localhost" : "classtrack.me", 
         userID: Buffer.from(userId.toString()),
         userName: student.username,
         attestationType: "none",
@@ -416,6 +424,11 @@ app.post("/markAttendance", verifyJWT, async (req, res) => {
       });
 
       req.session.currentRegistrationChallenge = options.challenge;
+      console.log("Generated registration options:", options);
+      console.log(
+        "Session challenge:",
+        req.session.currentRegistrationChallenge
+      );
 
       return res
         .status(206)
@@ -487,25 +500,25 @@ app.post("/startAttendance", verifyJWT, (req, res) => {
   const { class_id, teacher_lat, teacher_lng } = req.body;
   const today = new Date().toISOString().slice(0, 10);
 
-  // const checkQuery = `
-  //   SELECT * FROM attendance_sessions
-  //   WHERE class_id = ?
-  //     AND DATE(started_at) = ?
-  // `;
+  const checkQuery = `
+    SELECT * FROM attendance_sessions
+    WHERE class_id = ?
+      AND DATE(started_at) = ?
+  `;
 
-  // db.query(checkQuery, [class_id, today], (err, results) => {
-  //   if (err) {
-  //     console.error("DB error while checking today's session:", err);
-  //     return res
-  //       .status(500)
-  //       .json({ message: "DB error while checking session" });
-  //   }
+  db.query(checkQuery, [class_id, today], (err, results) => {
+    if (err) {
+      console.error("DB error while checking today's session:", err);
+      return res
+        .status(500)
+        .json({ message: "DB error while checking session" });
+    }
 
-  // if (results.length > 0) {
-  //   return res
-  //     .status(400)
-  //     .json({ message: "You have already started a session today" });
-  // }
+  if (results.length > 0) {
+    return res
+      .status(400)
+      .json({ message: "You have already started a session today" });
+  }
 
   generateUniqueCode((err, code) => {
     if (err)
@@ -529,41 +542,158 @@ app.post("/startAttendance", verifyJWT, (req, res) => {
       }
     );
   });
-  // });
+  });
 });
 
 app.post("/stopAttendance", verifyJWT, (req, res) => {
   const { class_id } = req.body;
 
+  // STEP 1: Stop attendance session first for fast frontend response
   const updateQuery = `UPDATE attendance_sessions SET is_active = 0 WHERE class_id = ? AND is_active = 1`;
-  db.query(updateQuery, [class_id], (err, result) => {
-    if (err)
+  db.query(updateQuery, [class_id], (err) => {
+    if (err) {
       return res
         .status(500)
         .json({ message: "DB error while stopping session" });
-    return res.status(200).json({ message: "Class stopped" });
+    }
+
+    res.status(200).json({ message: "Class stopped" });
+
+    // STEP 2: Now updating counter and run warning logic 
+    const counterQuery = `SELECT frequency_rate, counter FROM classes WHERE id = ?`;
+    db.query(counterQuery, [class_id], (err, result) => {
+      if (err || result.length === 0) {
+        console.error("DB error while fetching counter:", err);
+        return;
+      }
+
+      let count = result[0].counter;
+      const frequencyRate = result[0].frequency_rate;
+
+      if (frequencyRate == count + 1) {
+        setImmediate(() => {
+          checkLowAttendanceAndSendWarnings(class_id);
+        });
+        count = 0;
+      } else {
+        count += 1;
+      }
+
+      const updateCounterQuery = `UPDATE classes SET counter = ? WHERE id = ?`;
+      db.query(updateCounterQuery, [count, class_id], (err) => {
+        if (err) {
+          console.error("DB error while updating counter:", err);
+        }
+      });
+    });
   });
 });
 
-function haversineDistance(lat1, lon1, lat2, lon2) {
-  function toRad(x) {
-    return (x * Math.PI) / 180;
-  }
-  const R = 6371000; // meters
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+const checkLowAttendanceAndSendWarnings = (class_id) => {
+  console.log("Checking low attendance for class_id:", class_id);
+
+  const classQuery = `
+    SELECT c.name, c.attendance_limit, c.frequency_rate
+    FROM classes c
+    WHERE c.id = ?
+  `;
+
+  db.query(classQuery, [class_id], (err, result) => {
+    if (err) {
+      console.error("DB error while checking attendance:", err);
+      return;
+    }
+
+    if (result.length === 0) {
+      console.log("No class found with the given class_id");
+      return;
+    }
+
+    const { attendance_limit: attendanceLimit, name: className } = result[0];
+    console.log("Class Info:", result[0]);
+
+    const emailQuery = `
+ SELECT 
+  u.id AS student_id, 
+  u.username, 
+  u.email,
+  COUNT(ar.id) AS sessions_attended,
+  total_sessions.total_sessions,
+  ROUND(COUNT(ar.id) * 100.0 / total_sessions.total_sessions, 2) AS attendance_percentage
+FROM class_students cs
+JOIN users u ON cs.student_id = u.id
+LEFT JOIN attendance_records ar 
+  ON ar.student_id = cs.student_id 
+  AND ar.session_id IN (
+    SELECT id FROM attendance_sessions WHERE class_id = ?
+  )
+JOIN (
+  SELECT COUNT(*) AS total_sessions 
+  FROM attendance_sessions 
+  WHERE class_id = ?
+) AS total_sessions
+WHERE cs.class_id = ?
+GROUP BY u.id, u.username, u.email, total_sessions.total_sessions
+HAVING attendance_percentage < ?;`;
+
+    db.query(
+      emailQuery,
+      [class_id, class_id, class_id, attendanceLimit],
+      (err, results) => {
+        if (err) {
+          console.error("DB error while fetching students:", err);
+          return;
+        }
+
+        if (results.length === 0) {
+          console.log("No students found with low attendance");
+          return;
+        }
+
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD,
+          },
+        });
+
+        results.forEach((student) => {
+          const { username, email, attendance_percentage } = student;
+
+          console.log("Sending email to:", email); 
+
+          const mailOptions = {
+            from: `"ClassTrack Notifications" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: `Low Attendance Warning for ${className}`,
+            html: `
+            <p>Dear <strong>${username}</strong>,</p>
+            <p>This is a gentle reminder that your current attendance in <strong>${className}</strong> is <strong>${attendance_percentage}%</strong>, which is below the minimum requirement of <strong>${attendanceLimit}%</strong>.</p>
+            <p>Kindly ensure that you attend upcoming classes to meet the attendance criteria.</p>
+            <p>If you believe this is an error, please contact your class coordinator.</p>
+            <br/>
+            <p>Regards,<br/>ClassTrack Team</p>
+          `,
+          };
+
+          transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+              console.error(`Failed to send email to ${email_id}:`, error);
+            } else {
+              console.log(
+                `Email sent to ${username} (${email_id}): Attendance ${attendance_percentage}%`
+              );
+            }
+          });
+        });
+      }
+    );
+  });
+};
 
 app.get("/GetClasses", verifyJWT, (req, res) => {
-  console.log("Authenticated user:", req.user); // Add this
+  console.log("Authenticated user:", req.user); 
   const userId = req.user.id;
   const getUser = "SELECT id, role FROM users WHERE id = ?";
   db.query(getUser, [userId], (err, userResult) => {
@@ -593,72 +723,46 @@ app.get("/GetClasses", verifyJWT, (req, res) => {
       });
     } else if (user.role === "student") {
       const studentQuery = `
-        SELECT c.id, c.name, c.class_code, u.username AS teacher_name,
-               COUNT(cs2.student_id) AS student_count
-        FROM class_students cs
-        JOIN classes c ON cs.class_id = c.id
-        JOIN users u ON c.teacher_id = u.id
-        LEFT JOIN class_students cs2 ON c.id = cs2.class_id
-        WHERE cs.student_id = ?
-        GROUP BY c.id
-      `;
-      db.query(studentQuery, [user.id], (err, result) => {
-        if (err) return res.status(500).json({ message: "DB error (classes)" });
-        return res.status(200).json(result);
-      });
+  SELECT 
+    c.id, 
+    c.name, 
+    c.class_code, 
+    u.username AS teacher_name,
+    COUNT(cs2.student_id) AS student_count,
+    IFNULL(p.present_count, 0) AS present_sessions,
+    IFNULL(s.total_sessions, 0) AS total_sessions
+  FROM class_students cs
+  JOIN classes c ON cs.class_id = c.id
+  JOIN users u ON c.teacher_id = u.id
+  LEFT JOIN class_students cs2 ON c.id = cs2.class_id
+  LEFT JOIN (
+    SELECT class_id, COUNT(*) AS total_sessions
+    FROM attendance_sessions
+    GROUP BY class_id
+  ) s ON s.class_id = c.id
+  LEFT JOIN (
+    SELECT s.class_id, COUNT(r.id) AS present_count
+    FROM attendance_sessions s
+    JOIN attendance_records r ON r.session_id = s.id
+    WHERE r.student_id = ?
+    GROUP BY s.class_id
+  ) p ON p.class_id = c.id
+  WHERE cs.student_id = ?
+  GROUP BY c.id;
+`;
+
+db.query(studentQuery, [user.id, user.id], (err, result) => {
+  if (err) return res.status(500).json({ message: "DB error (classes)" });
+  return res.status(200).json(result);
+});
     } else {
       return res.status(401).json({ message: "Token is invalid or expired" });
     }
   });
 });
 
-app.post("/JoinClass", verifyJWT, (req, res) => {
-  const { class_code } = req.body;
-  const student_username = req.user.username;
-
-  // Get student ID
-  const getStudent =
-    "SELECT id FROM users WHERE username = ? AND role = 'student'";
-  db.query(getStudent, [student_username], (err, studentResult) => {
-    if (err) return res.status(500).json({ message: "DB error (student)" });
-    if (studentResult.length === 0)
-      return res.status(404).json({ message: "Student not found" });
-
-    const student_id = studentResult[0].id;
-
-    // Get class ID from code
-    const getClass = "SELECT id FROM classes WHERE class_code = ?";
-    db.query(getClass, [class_code], (err, classResult) => {
-      if (err) return res.status(500).json({ message: "DB error (class)" });
-      if (classResult.length === 0)
-        return res.status(404).json({ message: "Class not found" });
-
-      const class_id = classResult[0].id;
-
-      // Check if already joined
-      const checkQuery =
-        "SELECT * FROM class_students WHERE class_id = ? AND student_id = ?";
-      db.query(checkQuery, [class_id, student_id], (err, existing) => {
-        if (err) return res.status(500).json({ message: "DB error (check)" });
-        if (existing.length > 0)
-          return res.status(409).json({ message: "Already joined this class" });
-
-        // Insert into class_students
-        const insert =
-          "INSERT INTO class_students (class_id, student_id) VALUES (?, ?)";
-        db.query(insert, [class_id, student_id], (err, result) => {
-          if (err) return res.status(500).json({ message: "Join failed" });
-          return res
-            .status(200)
-            .json({ message: "Successfully joined the class" });
-        });
-      });
-    });
-  });
-});
-
 app.post("/CreateClass", verifyJWT, (req, res) => {
-  const { name } = req.body;
+  const { name, frequency_rate, attendance_limit } = req.body;
   const teacher_username = req.user.username;
 
   const getTeacherQuery =
@@ -675,42 +779,137 @@ app.post("/CreateClass", verifyJWT, (req, res) => {
         return res.status(500).json({ message: "Error generating class code" });
 
       const insertQuery = `
-        INSERT INTO classes (name, class_code, teacher_id)
-        VALUES (?, ?, ?)
+        INSERT INTO classes (name, class_code, teacher_id, attendance_limit, frequency_rate)
+        VALUES (?, ?, ?, ?, ?)
       `;
-      db.query(insertQuery, [name, class_code, teacher_id], (err, result) => {
-        if (err)
-          return res.status(500).json({ message: "Error inserting class" });
-        return res
-          .status(200)
-          .json({ message: "Class created successfully", class_code });
+      db.query(
+        insertQuery,
+        [name, class_code, teacher_id, attendance_limit, frequency_rate],
+        (err, result) => {
+          if (err)
+            return res.status(500).json({ message: "Error inserting class" });
+          return res
+            .status(200)
+            .json({ message: "Class created successfully", class_code });
+        }
+      );
+    });
+  });
+});
+
+app.post("/JoinClass", verifyJWT, (req, res) => {
+  console.log("Authenticated user:", req.user); 
+  console.log("Request body:", req.body); 
+  const { class_code } = req.body;
+  const student_username = req.user.username;
+
+  const getStudent =
+    "SELECT id FROM users WHERE username = ? AND role = 'student'";
+  db.query(getStudent, [student_username], (err, studentResult) => {
+    console.log("Student query result:", studentResult); 
+    if (err) return res.status(500).json({ message: "DB error (student)" });
+    if (studentResult.length === 0)
+      return res.status(404).json({ message: "Student not found" });
+
+    const student_id = studentResult[0].id;
+
+    const getClass = "SELECT id FROM classes WHERE class_code = ?";
+    db.query(getClass, [class_code], (err, classResult) => {
+      if (err) return res.status(500).json({ message: "DB error (class)" });
+      if (classResult.length === 0)
+        return res.status(201).json({ message: "Class not found" });
+
+      const class_id = classResult[0].id;
+
+      const checkQuery =
+        "SELECT * FROM class_students WHERE class_id = ? AND student_id = ?";
+      db.query(checkQuery, [class_id, student_id], (err, existing) => {
+        if (err) return res.status(500).json({ message: "DB error (check)" });
+        if (existing.length > 0)
+          return res.status(409).json({ message: "Already joined this class" });
+
+        const insert =
+          "INSERT INTO class_students (class_id, student_id) VALUES (?, ?)";
+        db.query(insert, [class_id, student_id], (err, result) => {
+          if (err) return res.status(500).json({ message: "Join failed" });
+          return res
+            .status(200)
+            .json({ message: "Successfully joined the class" });
+        });
       });
     });
   });
 });
 
 app.post("/UpdateAttendance", (req, res) => {
-  const { studentName, date, attendanceStatus } = req.body;
-  console.log("Updating attendance for:", studentName, date, attendanceStatus);
+  const { student_id, session_id, attendanceStatus, date } = req.body;
 
-  const insertQuery = `
-    INSERT INTO attendance_records (student_name, session_date, attendance_status)
-    VALUES (?, ?, ?)
+  if (!session_id || !student_id || !date) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  console.log("UpdateAttendance:", {
+    session_id,
+    student_id,
+    attendanceStatus,
+    date,
+  });
+
+  if (attendanceStatus === true) {
+    // DELETE if already present
+    const deleteQuery = `
+      DELETE FROM attendance_records
+      WHERE session_id = ? AND student_id = ?
     `;
-  db.query(
-    insertQuery,
-    [studentName, date, attendanceStatus],
-    (err, result) => {
+    db.query(deleteQuery, [session_id, student_id], (err, result) => {
       if (err) {
-        console.error("DB error while updating attendance:", err);
-        return res
-          .status(500)
-          .json({ message: "DB error while updating attendance" });
+        console.error("DB error while deleting attendance:", err);
+        return res.status(500).json({ message: "DB error during delete" });
       }
-      console.log("Attendance updated successfully");
+      console.log("Attendance record deleted");
       return res
         .status(200)
-        .json({ message: "Attendance updated successfully" });
+        .json({ message: "Attendance deleted successfully" });
+    });
+  } else {
+    // INSERT a new record
+    const insertQuery = `
+      INSERT INTO attendance_records (session_id, student_id, marked_at)
+      VALUES (?, ?, ?)
+    `;
+    db.query(insertQuery, [session_id, student_id, date], (err, result) => {
+      if (err) {
+        console.error("DB error while inserting attendance:", err);
+        return res.status(500).json({ message: "DB error during insert" });
+      }
+      console.log("Attendance inserted");
+      return res
+        .status(200)
+        .json({ message: "Attendance inserted successfully" });
+    });
+  }
+});
+
+app.get("/getsessionId", verifyJWT, (req, res) => {
+  const { class_id, date } = req.query;
+
+  if (!class_id || !date) {
+    return res.status(400).json({ message: "Missing class_id or date" });
+  }
+
+  const query = `
+    SELECT id FROM attendance_sessions
+    WHERE class_id = ? AND DATE(started_at) = ?
+  `;
+
+  db.query(query, [class_id, date], (err, result) => {
+    if (err) {
+      console.error("DB error:", err);
+      return res.status(500).json({ message: "DB error" });
     }
-  );
+    if (result.length === 0) {
+      return res.status(404).json({ message: "No session found" });
+    }
+    return res.status(200).json({ sessionId: result[0].id });
+  });
 });

@@ -10,7 +10,7 @@ const db = mysql.createPool({
   ssl: {
     rejectUnauthorized: false,
   },
-  connectTimeout: 100000, // (optional) set a longer timeout (10 sec)
+  connectTimeout: 100000, 
 }); 
 
 module.exports = db;

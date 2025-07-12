@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-app.use(cookieParser()); // <== add this above session
+app.use(cookieParser()); 
 const jwt = require("jsonwebtoken");
 const verifyJWT = require("../middleware/auth.js");
 const db = require("../utils/db.js");
@@ -120,7 +120,7 @@ app.post("/DeleteAccount", verifyJWT, (req, res) => {
                                     err
                                   );
 
-                                return deleteAuthenticatorsAndUser(); // Now safe to delete user
+                                return deleteAuthenticatorsAndUser(); // delete user
                               }
                             );
                           }
@@ -180,7 +180,7 @@ app.post("/DeleteAccount", verifyJWT, (req, res) => {
                       });
 
                       console.log(
-                        "✅ Successfully deleted user and all associated data for user ID:",
+                        "Successfully deleted user and all associated data for user ID:",
                         userId
                       );
                       return res.status(200).json({

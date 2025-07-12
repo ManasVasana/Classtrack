@@ -2,10 +2,9 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
-  withCredentials: true, // ✅ still needed if your backend uses cookies for login/session
+  withCredentials: true, 
 });
 
-// Request interceptor: add access token to headers
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {
@@ -14,11 +13,9 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor: just return or forward error — refresh token logic is disabled
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // 🔁 Refresh token logic disabled below
 
     /*
     const originalRequest = error.config;

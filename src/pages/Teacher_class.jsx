@@ -1,14 +1,32 @@
 "use client";
 
-import axios from "axios";
 import api from "../utils/api.js";
 import { useEffect } from "react";
 import React, { useState, useCallback } from "react";
 import { Play, Users, Check, X, Megaphone, Bell } from "lucide-react";
-import { useParams } from "react-router-dom";
-import CountUp from "./Counting.jsx";
+import { Navigate, useParams } from "react-router-dom";
 import AttendanceTable from "../components/Tclass-attend_table.jsx";
-import { PlusCircle } from "react-feather";
+import { PieChartIcon } from "lucide-react";
+import { BarChart3 } from "lucide-react";
+import {
+  Settings,
+  Copy,
+  Calendar,
+  GraduationCap,
+  Percent,
+} from "lucide-react";
+
+import { handleCopy } from "../components/Copy.jsx";
+
+import { 
+  CustomCard,
+  CustomCardHeader,
+  CustomCardTitle,
+  CustomCardContent,
+  CustomButton,
+  CustomBarTooltip,
+  renderActiveShape
+} from "../components/CustomComponents.jsx";
 
 import {
   Bar,
@@ -19,196 +37,10 @@ import {
   PieChart,
   Pie,
   Cell,
-  Sector,
 } from "recharts";
 
-const CustomCard = ({ children, className = "" }) => (
-  <div
-    className={`bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden ${className}`}
-  >
-    {children}
-  </div>
-);
 
-const CustomCardHeader = ({ children, className = "" }) => (
-  <div className={`p-3 sm:p-4 md:p-6 ${className}`}>{children}</div>
-);
-
-const CustomCardTitle = ({ children, className = "" }) => (
-  <h2
-    className={`text-lg sm:text-xl md:text-2xl font-semibold text-gray-800 dark:text-gray-100 ${className}`}
-  >
-    {children}
-  </h2>
-);
-
-const CustomCardContent = ({ children, className = "" }) => (
-  <div className={`p-3 sm:p-4 md:p-6 ${className}`}>{children}</div>
-);
-
-const CustomButton = ({ children, className = "", ...props }) => (
-  <button
-    className={`px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 text-gray-900 dark:text-gray-100 focus:ring-offset-white dark:focus:ring-offset-gray-800 ${className}`}
-    {...props}
-  >
-    {children}
-  </button>
-);
-
-const CustomTable = ({ children, className = "" }) => (
-  <div className={`w-full overflow-x-auto ${className}`}>
-    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-      {children}
-    </table>
-  </div>
-);
-
-const CustomTableHeader = ({ children }) => (
-  <thead className="bg-gray-100 dark:bg-gray-700">
-    <tr>{children}</tr>
-  </thead>
-);
-
-const CustomTableBody = ({ children }) => (
-  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-    {children}
-  </tbody>
-);
-
-const CustomTableHead = ({ children, className = "" }) => (
-  <th
-    scope="col"
-    className={`px-6 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wider ${className}`}
-  >
-    {children}
-  </th>
-);
-
-const CustomTableRow = ({ children }) => <tr>{children}</tr>;
-
-const CustomTableCell = ({ children, className = "" }) => (
-  <td
-    className={`px-6 py-4 whitespace-nowrap text-gray-700 dark:text-gray-300 ${className}`}
-  >
-    {children}
-  </td>
-);
-
-const CustomBarTooltip = ({ active, payload }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-        <p className="text-lg font-bold text-blue-500">{payload[0].value}%</p>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Date: {payload[0].payload.date}
-        </p>
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          Attendance: {payload[0].payload.attendance} students
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
-
-const renderActiveShape = (props) => {
-  const {
-    cx,
-    cy,
-    midAngle,
-    innerRadius,
-    outerRadius,
-    startAngle,
-    endAngle,
-    fill,
-    payload,
-    percent,
-  } = props;
-  const sin = Math.sin((-midAngle * Math.PI) / 180);
-  const cos = Math.cos((-midAngle * Math.PI) / 180);
-  const sx = cx + (outerRadius + 10) * cos;
-  const sy = cy + (outerRadius + 10) * sin;
-  const mx = cx + (outerRadius + 30) * cos;
-  const my = cy + (outerRadius + 30) * sin;
-  const ex = mx + (cos >= 0 ? 1 : -1) * 22;
-  const ey = my;
-  const textAnchor = cos >= 0 ? "start" : "end";
-
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-      />
-      <Sector
-        cx={cx}
-        cy={cy}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        innerRadius={outerRadius + 6}
-        outerRadius={outerRadius + 10}
-        fill={fill}
-      />
-      <path
-        d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`}
-        stroke={fill}
-        fill="none"
-      />
-      <circle cx={ex} cy={ey} r={2} fill={fill} stroke="none" />
-      <text
-        x={ex + (cos >= 0 ? 1 : -1) * 12}
-        y={ey}
-        textAnchor={textAnchor}
-        fill="#E5E7EB"
-        fontSize={14}
-        fontWeight="bold"
-      >
-        {`${payload.name} ${(percent * 100).toFixed(0)}%`}
-      </text>
-    </g>
-  );
-};
-
-// function getLast5SessionAttendance(data) {
-//   // Step 1: Group by session_id
-//   const sessions = {};
-
-//   data.forEach((record) => {
-//     const { session_id, session_date, attendance_status } = record;
-
-//     if (!sessions[session_id]) {
-//       sessions[session_id] = {
-//         date: new Date(session_date),
-//         total: 0,
-//         present: 0,
-//       };
-//     }
-
-//     sessions[session_id].total += 1;
-//     if (attendance_status === "Present") {
-//       sessions[session_id].present += 1;
-//     }
-//   });
-
-//   // Step 2: Convert to array and sort by date (latest last)
-//   const sessionArray = Object.values(sessions)
-//     .map((s) => ({
-//       date: s.date.toISOString().slice(5, 10), // "MM-DD"
-//       percentage: Math.round((s.present / s.total) * 100),
-//     }))
-//     .sort((a, b) => new Date(b.date) - new Date(a.date)) // Sort descending
-//     .slice(0, 5) // Last 5 sessions
-//     .reverse(); // So it shows oldest to newest
-
-//   return sessionArray;
-// }
-
-function Dashboard() {
+function Dashboard({ darkMode, toggledarkMode }) {
   const { id: class_id } = useParams();
   const [status, setStatus] = useState(null);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -221,6 +53,7 @@ function Dashboard() {
 
   const [isClassActive, setIsClassActive] = useState(false);
   const [attendanceCode, setAttendanceCode] = useState("");
+  const [settingOpen, setSettingOpen] = useState(false);
 
   const handleToggleClass = async () => {
     if (!navigator.geolocation) {
@@ -235,7 +68,6 @@ function Dashboard() {
 
         try {
           if (!isClassActive) {
-            // Starting the class
             const response = await api.post(`/startAttendance`, {
               class_id,
               teacher_lat,
@@ -245,7 +77,6 @@ function Dashboard() {
             setAttendanceCode(response.data.code);
             setIsClassActive(true);
           } else {
-            // Stopping the class
             await api.post(`/stopAttendance`, {
               class_id,
             });
@@ -279,6 +110,7 @@ function Dashboard() {
   const total = attend_tableDetails.length;
 
   useEffect(() => {
+    console.log("Attendance table details length:", attend_tableDetails.length);
     if (attend_tableDetails.length === 0) {
       setEmpty(true);
       setattendanceData([]);
@@ -291,11 +123,21 @@ function Dashboard() {
 
     for (let entry of attend_tableDetails) {
       const { session_date, attendance_status } = entry;
-
-      const dateKey = new Date(session_date).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "2-digit",
-      }); // ⬅️ DD/MM format (using "en-GB")
+      // Parsing DD-MM-YYYY manually
+      let d;
+      if (/^\d{2}-\d{2}-\d{4}$/.test(session_date)) {
+        const [day, month, year] = session_date.split("-");
+        d = new Date(`${year}-${month}-${day}`);
+      } else {
+        d = new Date(session_date);
+      }
+      if (isNaN(d.getTime())) {
+        console.warn("Invalid session_date:", session_date, entry);
+        continue;
+      }
+      const dateKey = `${String(d.getDate()).padStart(2, "0")}-${String(
+        d.getMonth() + 1
+      ).padStart(2, "0")}-${d.getFullYear()}`;
 
       if (!dateMap[dateKey]) {
         dateMap[dateKey] = { total: 0, present: 0 };
@@ -315,16 +157,18 @@ function Dashboard() {
       })
     );
 
-    // Sort by actual date (using ISO parsing hack)
+    // Sorting by actual date
     sessions.sort((a, b) => {
       const [da, ma] = a.date.split("/").map(Number);
       const [db, mb] = b.date.split("/").map(Number);
-      const d1 = new Date(2024, ma - 1, da); // year is dummy
+      const d1 = new Date(2024, ma - 1, da); 
       const d2 = new Date(2024, mb - 1, db);
       return d1 - d2;
     });
     setattendanceData(sessions);
   }, [attend_tableDetails]);
+
+  useEffect(() => {}, [attendanceData]);
 
   const presentCount = attend_tableDetails.filter(
     (entry) => entry.attendance_status === "Present"
@@ -390,7 +234,23 @@ function Dashboard() {
     console.log("Fetching attendance table details for ID:", class_id);
     try {
       const res = await api.get(`/getTClass_attend_table_details/${class_id}`);
-      setattend_tableDetails(res.data);
+
+      // Format session_date in each item to DD-MM-YYYY
+      const formatted = res.data.map((entry) => {
+        const d = new Date(entry.session_date);
+        const formattedDate = `${String(d.getDate()).padStart(2, "0")}-${String(
+          d.getMonth() + 1
+        ).padStart(2, "0")}-${d.getFullYear()}`;
+        return {
+          ...entry,
+          session_date: formattedDate,
+        };
+      });
+
+      console.log("Formatted attendance data:", formatted);
+
+      setattend_tableDetails(formatted);
+
       console.log("Attendance table details:", res.data);
     } catch (err) {
       console.error("Failed to load attendance table details", err);
@@ -409,205 +269,391 @@ function Dashboard() {
     }
   }, [classDetails, attend_tableDetails]);
 
-  const handleCopy = (code) => {
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        alert("Class code copied!");
-      })
-      .catch(() => {
-        alert("Failed to copy class code.");
-      });
+  const handleSettings = () => {
+    setSettingOpen(true);
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-r from-[#f0f9ff] to-[#e8f3ff] dark:bg-gradient-to-r dark:from-gray-900 dark:to-gray-950 p-2 sm:p-4 md:p-6 lg:p-14 text-gray-900 dark:text-gray-100">
-      <div className="space-y-4 sm:space-y-6 lg:space-y-8">
-        {/* Top Cards Section */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Course Info Card */}
-          <CustomCard className="w-full bg-white dark:bg-gray-800">
-            <CustomCardHeader className="bg-gradient-to-r from-cyan-500 to-blue-500">
-              <CustomCardTitle>{classDetails.name}</CustomCardTitle>
-            </CustomCardHeader>
-            <CustomCardContent className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-black/10 dark:bg-white/20 flex items-center justify-center">
-                <Users className="w-4 h-4 sm:w-5 sm:h-5" />
-              </div>
-              <span className="text-sm sm:text-base">
-                {classDetails.teacher_name}
-              </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  handleCopy(classDetails.class_code);
-                }}
-                className="text-xs text-blue-600 dark:text-cyan-300 ml-auto"
-                title="Copy class code"
-              >
-                {classDetails.class_code}
-              </button>
-            </CustomCardContent>
-          </CustomCard>
-
-          {/* Live Class Card */}
-          <CustomCard className="bg-white dark:bg-gray-800">
-            <CustomCardHeader>
-              <CustomCardTitle>Live Class</CustomCardTitle>
-            </CustomCardHeader>
-            <CustomCardContent className="space-y-4 text-gray-700 dark:text-gray-300">
-              <CustomButton
-                className={`w-full ${
-                  isClassActive
-                    ? "bg-red-500 hover:bg-red-600"
-                    : "bg-emerald-500 hover:bg-emerald-600"
-                } text-white text-xs sm:text-sm md:text-base`}
-                onClick={handleToggleClass}
-              >
-                {isClassActive ? "Stop Live Class" : "Start Live Class"}
-              </CustomButton>
-
-              {status && (
-                <div className="text-center text-lg mt-4 text-red-500 dark:text-red-400">
-                  {status.message}
+    <div className="relative">
+      <div className="absolute inset-0 opacity-40 dark:opacity-20">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8882_1px,transparent_1px),linear-gradient(to_bottom,#8882_1px,transparent_1px)] bg-[size:24px_24px]" />
+      </div>
+      <div className="min-h-screen w-full bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-800 transition-all duration-500 p-6 sm:p-10 md:p-12 lg:p-16 pt-24 sm:pt-24 md:pt-28 lg:pt-28 text-gray-900 dark:text-gray-100">
+        <div className="space-y-4 sm:space-y-6 lg:space-y-8 mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+            {/* Course Info Card */}
+            <CustomCard className="w-full bg-white dark:bg-gray-800 col-span-1 flex flex-col justify-between h-full">
+              <CustomCardHeader className="bg-gradient-to-r from-cyan-500 to-blue-500">
+                <div className="flex items-center justify-between">
+                  <CustomCardTitle className="text-white text-lg sm:text-xl font-semibold truncate">
+                    {classDetails.name}
+                  </CustomCardTitle>
+                  <button
+                    onClick={handleSettings}
+                    className="p-2 sm:p-3 rounded-full bg-white/20 hover:bg-white/30 transition-all duration-300 group backdrop-blur-sm border border-white/10 hover:border-white/20 shadow-lg hover:shadow-xl"
+                    title="Class Settings"
+                  >
+                    <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-white group-hover:rotate-90 transition-transform duration-300" />
+                  </button>
                 </div>
-              )}
-
-              {isClassActive && (
-                <div className="text-center mt-2">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Attendance Code:
-                  </p>
-                  <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 bg-white dark:bg-gray-900 px-4 py-2 rounded-md inline-block tracking-widest shadow-md border border-emerald-600">
-                    {attendanceCode}
-                  </p>
-                </div>
-              )}
-            </CustomCardContent>
-          </CustomCard>
-
-          {/* Total Students Card */}
-          <CustomCard className="bg-white dark:bg-gray-800">
-            <CustomCardHeader>
-              <CustomCardTitle>Total Students</CustomCardTitle>
-            </CustomCardHeader>
-            <CustomCardContent className="flex justify-between items-center text-gray-700 dark:text-gray-300">
-              <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 dark:text-blue-400" />
-              <CountUp target={classDetails.student_count} />
-            </CustomCardContent>
-          </CustomCard>
-        </div>
-
-        {!empty && (
-          <div className="flex gap-4 sm:gap-6 items-center justify-center">
-            {/* Average Attendance Card */}
-            <CustomCard className="w-2/5 h-[400px] bg-white dark:bg-gray-800">
-              <CustomCardHeader>
-                <CustomCardTitle>Average Attendance</CustomCardTitle>
               </CustomCardHeader>
-              <CustomCardContent className="flex flex-col items-center text-gray-700 dark:text-gray-300">
-                <div className="md:h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        activeIndex={activeIndex}
-                        activeShape={renderActiveShape}
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius="0%"
-                        outerRadius="80%"
-                        dataKey="value"
-                        onMouseEnter={onPieEnter}
-                        onMouseLeave={onPieLeave}
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex gap-4 sm:gap-8 mt-2 sm:mt-4 text-xs sm:text-sm">
-                  <div className="flex items-center gap-1 sm:gap-2">
-                    <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-emerald-500"></div>
-                    <span>Present</span>
-                  </div>
-                  <div className="flex items-center gap-1 sm:gap-2">
-                    <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-red-500"></div>
-                    <span>Absent</span>
-                  </div>
-                </div>
-                <div className="flex justify-center space-x-8 mt-4">
-                  {pieData.map((entry, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center p-2 rounded-lg"
-                    >
-                      <div
-                        className="w-4 h-4 rounded-full mr-2"
-                        style={{ backgroundColor: entry.color }}
-                      />
-                      <span className="text-base">{entry.name}</span>
+
+              <CustomCardContent className="flex-1 flex flex-col justify-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Teacher Info */}
+                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg border border-purple-100 dark:border-purple-800/30">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg flex-shrink-0">
+                      <GraduationCap className="w-5 h-5 text-white" />
                     </div>
-                  ))}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Instructor
+                      </p>
+                      <p className="text-md font-semibold text-gray-800 dark:text-gray-200 truncate">
+                        <span className="text-base sm:text-lg font-medium break-words flex-1">
+                          {classDetails.teacher_name
+                            ? classDetails.teacher_name
+                                .charAt(0)
+                                .toUpperCase() +
+                              classDetails.teacher_name.slice(1)
+                            : ""}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Class Code */}
+                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-100 dark:border-blue-800/30">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Class Code
+                      </p>
+                      <div className="flex items-end justify-between">
+                        <div className="text-sm font-bold text-blue-600 dark:text-blue-400 font-mono">
+                          {classDetails.class_code}
+                        </div>
+                        <div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              handleCopy(classDetails.class_code);
+                            }}
+                            className="p-1 rounded-full bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-110 border border-gray-200 dark:border-gray-600 flex-shrink-0"
+                            title="Copy class code"
+                          >
+                            <Copy className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CustomCardContent>
             </CustomCard>
 
-            {/* Daily Attendance Chart */}
-            <CustomCard className="w-3/5 h-[400px] bg-black dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow">
+            {/* Live Class Card */}
+            <CustomCard className="bg-white dark:bg-gray-800 lg:col-span-1">
               <CustomCardHeader>
-                <CustomCardTitle className="text-gray-900 dark:text-gray-100">
-                  Daily Attendance Percentage
+                <CustomCardTitle className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      isClassActive ? "bg-red-500 animate-pulse" : "bg-gray-400"
+                    }`}
+                  ></div>
+                  Live Class
                 </CustomCardTitle>
               </CustomCardHeader>
-              <CustomCardContent className="text-gray-700 dark:text-gray-300">
-                <div className="md:h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={attendanceData}>
-                      <XAxis
-                        dataKey="date"
-                        stroke="#6B7280"
-                        tick={{ fill: "#6B7280" }}
-                        fontSize={10}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <Tooltip
-                        content={<CustomBarTooltip />}
-                        cursor={{ fill: "rgba(59, 130, 246, 0.1)" }}
-                      />
-                      <Bar
-                        dataKey="percentage"
-                        fill="#3B82F6"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+              <CustomCardContent className="space-y-4 text-gray-700 dark:text-gray-300">
+                <CustomButton
+                  className={`w-full ${
+                    isClassActive
+                      ? "bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/25"
+                      : "bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/25"
+                  } text-white font-semibold`}
+                  onClick={handleToggleClass}
+                >
+                  {isClassActive ? "Stop Live Class" : "Start Live Class"}
+                </CustomButton>
+                {!isClassActive && (
+                  <div className="text-center pt-2">
+                    <CustomButton on className="inline-flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-full">
+                      <Calendar  onClick={() => Navigate('/Calendar')} className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      <span className="text-xs text-gray-600 dark:text-gray-400">
+                        Schedule class
+                      </span>
+                    </CustomButton>
+                  </div>
+                )}
+
+                {isClassActive && (
+                  <div className="text-center space-y-3">
+                    <div className="bg-gradient-to-r from-emerald-50 to-cyan-50 dark:from-emerald-900/20 dark:to-cyan-900/20 rounded-lg p-2">
+                      <div className="relative">
+                        <p className="text-2xl sm:text-3xl font-bold text-emerald-600 dark:text-emerald-400 font-mono tracking-wider">
+                          {attendanceCode}
+                        </p>
+                        <button
+                          onClick={() => handleCopy(attendanceCode)}
+                          className="absolute -top-2 -right-2 p-2 rounded-full bg-white dark:bg-gray-800 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+                          title="Copy attendance code"
+                        >
+                          <Copy className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CustomCardContent>
+            </CustomCard>
+
+            {/* Total Students Card */}
+            <CustomCard className="bg-white dark:bg-gray-800 col-span-1 sm:col-span-2 lg:col-span-1 flex flex-col justify-between h-full">
+              <CustomCardHeader>
+                <CustomCardTitle>Total Students</CustomCardTitle>
+              </CustomCardHeader>
+
+              <CustomCardContent className="flex justify-between items-center text-gray-700 dark:text-gray-300 mt-auto">
+                <Users className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                <span className="text-3xl">{classDetails.student_count}</span>
               </CustomCardContent>
             </CustomCard>
           </div>
-        )}
 
-        {!empty && (
-          <AttendanceTable
-            studentData1={attend_tableDetails}
-            onRefetch={fetchAttendtableDetails}
-          />
-        )}
+          {!empty && (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 lg:gap-8 mb-6 sm:mb-8">
+              {/* Average Attendance Pie Chart */}
+              <CustomCard className="animate-fade-in w-full">
+                <CustomCardHeader>
+                  <div className="flex items-center space-x-2">
+                    <PieChartIcon className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                    <CustomCardTitle className="truncate">
+                      Average Attendance
+                    </CustomCardTitle>
+                  </div>
+                </CustomCardHeader>
+                <CustomCardContent className="flex flex-col items-center">
+                  <div className="h-48 sm:h-56 md:h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          activeIndex={activeIndex}
+                          activeShape={renderActiveShape}
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="30%"
+                          outerRadius="70%"
+                          dataKey="value"
+                          onMouseEnter={onPieEnter}
+                          onMouseLeave={onPieLeave}
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-6 mt-4 w-full">
+                    {pieData.map((entry, index) => (
+                      <div key={index} className="flex items-center space-x-2">
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: entry.color }}
+                        />
+                        <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 break-words">
+                          {entry.name}
+                          <span className="lg:hidden ">
+                            : {entry.value.toFixed(1)}%
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CustomCardContent>
+              </CustomCard>
+
+              {/* Daily Attendance Bar Chart */}
+              <CustomCard
+                className="animate-fade-in w-full"
+                style={{ animationDelay: "0.1s" }}
+              >
+                <CustomCardHeader>
+                  <div className="flex items-center space-x-2">
+                    <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                    <CustomCardTitle className="truncate">
+                      Daily Attendance Percentage
+                    </CustomCardTitle>
+                  </div>
+                </CustomCardHeader>
+                <CustomCardContent>
+                  <div className="h-48 sm:h-56 md:h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={attendanceData}>
+                        <XAxis
+                          dataKey="date"
+                          stroke="currentColor"
+                          className="text-gray-600 dark:text-gray-400"
+                          tick={{ fill: "currentColor" }}
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                          interval="preserveStartEnd"
+                        />
+                        <Tooltip
+                          content={<CustomBarTooltip />}
+                          cursor={{ fill: "rgba(59, 130, 246, 0.1)" }}
+                        />
+                        <Bar
+                          dataKey="percentage"
+                          fill="url(#colorGradient)"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <defs>
+                          <linearGradient
+                            id="colorGradient"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="5%"
+                              stopColor="#3B82F6"
+                              stopOpacity={0.8}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#1D4ED8"
+                              stopOpacity={0.6}
+                            />
+                          </linearGradient>
+                        </defs>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CustomCardContent>
+              </CustomCard>
+            </div>
+          )}
+          {empty && (
+            <div className="text-center text-gray-500 dark:text-gray-400">
+              <p className="text-lg font-semibold">
+                No attendance records found for this class.
+              </p>
+              <p className="text-sm mt-2">
+                Start a live class to begin recording attendance.
+              </p>
+            </div>
+          )}
+
+          {!empty && (
+            <div className="w-full">
+              <AttendanceTable
+                studentData1={attend_tableDetails}
+                onRefetch={fetchAttendtableDetails}
+                class_id={class_id}
+              />
+            </div>
+          )}
+
+          {/* {settingOpen && (
+            <div className="fixed inset-0 bg-black backdrop-blur-sm bg-opacity-50 flex items-center justify-center">
+              <div className="bg-white dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900 p-8 rounded-2xl shadow-2xl w-96 transform transition-all duration-300 ease-in-out hover:scale-105">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    Settings
+                  </h2>
+                  <button
+                    onClick={() => setSettingOpen(false)}
+                    className="text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+                <form
+                  // onSubmit={handleSubmit}
+                  className="space-y-4"
+                >
+                  <div>
+                    <label
+                      htmlFor="className"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
+                      Change class name
+                    </label>
+                    <input
+                      type="text"
+                      id="className"
+                      // value={formData.name}
+                      // onChange={(e) => handleInputChange('name', e.target.value)}
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
+                      placeholder="Enter new name"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="attendanceRate"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
+                      Change attendance frequency rate
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        id="attendanceRate"
+                        // value={formData.attendanceRate}
+                        // onChange={(e) => handleInputChange('attendanceRate', e.target.value)}
+                        className="w-full px-4 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
+                        placeholder="Times per week"
+                        min="0"
+                        max="100"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="attendanceLimit"
+                      className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+                    >
+                      Change attendance limit
+                    </label>
+                    <div className="relative">
+                      <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="number"
+                        id="attendanceLimit"
+                        // value={formData.attendanceLimit}
+                        // onChange={(e) => handleInputChange('attendanceLimit', e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-200"
+                        placeholder="Percentage"
+                        min="0"
+                        max="100"
+                        step="1"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-4">
+                    <button
+                      type="submit"
+                      className="w-full py-2 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-[1.02]"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )} */}
+        </div>
       </div>
-      {/* <div className="flex justify-center fixed bottom-8 right-8">
-        <button
-          // onClick={addClass}
-          className="group relative inline-flex items-center justify-center px-3 py-3 overflow-hidden font-bold text-white rounded-full shadow-2xl bg-gradient-to-br from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 transition-all duration-300 ease-out hover:scale-105"
-        >
-          <span className="absolute right-0 w-8 h-32 -mt-12 transition-all duration-1000 transform translate-x-12 bg-white opacity-10 rotate-12 group-hover:-translate-x-40 ease"></span>
-          <PlusCircle />
-        </button>
-      </div> */}
     </div>
   );
 }

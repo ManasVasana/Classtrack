@@ -13,6 +13,7 @@ import Axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { BadgeCheck } from "lucide-react";
 import Notification from "../components/notification";
+import { LoadingButton } from "../components/Loading";
 
 function SignUp() {
   const [showNotification, setShowNotification] = useState(false);
@@ -25,6 +26,7 @@ function SignUp() {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const [errors, setErrors] = useState({});
   const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const toggleRoleDropdown = () => {
     setIsRoleDropdownOpen(!isRoleDropdownOpen);
@@ -50,9 +52,11 @@ function SignUp() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     const validationErrors = validateFields();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+      setLoading(false);
       return;
     }
 
@@ -97,6 +101,8 @@ function SignUp() {
       } else {
         alert("Unable to reach server. Please check your connection.");
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -109,22 +115,21 @@ function SignUp() {
           </h1>
 
           <form className="p-8 space-y-6" onSubmit={handleSubmit}>
-            <h2 className="text-cyan-400 text-2xl font-bold text-center mb-6">
+            <h2 className="text-cyan-400 text-xl sm:text-2xl font-bold text-center mb-6">
               Create your account
             </h2>
 
             <div className="space-y-4">
-              {/* Role Selection */}
               <div className="relative">
                 <div
-                  className={`flex items-center justify-between bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 transition duration-300 ${
+                  className={`flex items-center cursor-pointer justify-between bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 transition duration-300 ${
                     isRoleDropdownOpen
                       ? "ring-2 ring-cyan-400 border-cyan-400"
                       : "focus-within:ring-2 focus-within:ring-cyan-400 focus-within:border-cyan-400"
                   }`}
                   onClick={toggleRoleDropdown}
                 >
-                  <div className="flex items-center gap-3 text-white cursor-pointer">
+                  <div className="flex items-center gap-3 text-white">
                     {role === "" ? (
                       <FaUser className="text-cyan-400" />
                     ) : role === "student" ? (
@@ -134,7 +139,7 @@ function SignUp() {
                     )}
                     <span>
                       {role === ""
-                        ? "Please select your role"
+                        ? "Select your role"
                         : role === "student"
                         ? "Student"
                         : "Teacher"}
@@ -147,7 +152,6 @@ function SignUp() {
                   />
                 </div>
 
-                {/* Dropdown (absolute but overlaps) */}
                 {isRoleDropdownOpen && (
                   <div className="absolute left-0 right-0 mt-1 rounded-lg bg-gray-700 border border-gray-600 shadow-lg z-10">
                     <div
@@ -176,7 +180,6 @@ function SignUp() {
                 )}
               </div>
 
-              {/* Email */}
               <div>
                 <div className="flex items-center bg-gray-700 border border-gray-600 rounded-lg focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400 transition duration-300 px-3 py-2">
                   <FaEnvelope className="text-cyan-400 mr-3" />
@@ -192,14 +195,13 @@ function SignUp() {
                 )}
               </div>
 
-              {/* Username */}
               <div>
                 <div className="flex items-center bg-gray-700 border border-gray-600 rounded-lg focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400 transition duration-300 px-3 py-2">
                   <FaUser className="text-cyan-400 mr-3" />
                   <input
                     onChange={(e) => setUsername(e.target.value)}
                     type="text"
-                    placeholder="Username"
+                    placeholder="Full Name"
                     className="bg-transparent outline-none text-white w-full"
                   />
                 </div>
@@ -208,7 +210,6 @@ function SignUp() {
                 )}
               </div>
 
-              {/* Password */}
               <div>
                 <div className="flex items-center bg-gray-700 border border-gray-600 rounded-lg focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400 transition duration-300 px-3 py-2">
                   <FaLock className="text-cyan-400 mr-3" />
@@ -233,14 +234,13 @@ function SignUp() {
             </div>
 
             <button
-              className="w-full bg-cyan-400 hover:bg-cyan-500 text-white font-bold py-3 rounded-full transition duration-300 shadow-lg"
+              className="w-full bg-cyan-400 hover:bg-cyan-500 font-bold py-3 rounded-full transition duration-300 shadow-lg text-gray-800"
               type="submit"
             >
-              Sign Up
+              {loading ? <LoadingButton text={"Registering"} /> : "Sign Up"}
             </button>
           </form>
 
-          {/* Footer */}
           <div className="text-center pb-8">
             <p className="text-gray-400">Already have an account?</p>
             <a

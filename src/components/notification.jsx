@@ -10,9 +10,8 @@ function Notification({ icon, message, color, onClose }) {
     setProgress(0);
 
     const startTime = Date.now();
-    const progressDuration = 1500; // Progress fills in 2 seconds
-    const totalDuration = 1600; // Total visible time (2s progress + 0.5s buffer)
-
+    const progressDuration = 1500; 
+    const totalDuration = 1600; 
     const progressInterval = setInterval(() => {
       const elapsed = Date.now() - startTime;
       const newProgress = Math.min((elapsed / progressDuration) * 100, 100);
@@ -21,7 +20,7 @@ function Notification({ icon, message, color, onClose }) {
 
     const timeout = setTimeout(() => {
       setIsVisible(false);
-      setTimeout(onClose, 300); // Wait for exit animation to complete
+      setTimeout(onClose, 300); 
     }, totalDuration);
 
     return () => {

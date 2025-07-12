@@ -8,16 +8,16 @@ const verifyJWT = (req, res, next) => {
     return res.status(401).json({ message: "Missing Authorization header" });
   }
 
-  const token = authHeader.split(" ")[1]; // Expecting: "Bearer <token>"
+  const token = authHeader.split(" ")[1]; // "Bearer <token>"
 
   jwt.verify(token, process.env.JWT_secret, (err, decoded) => {
     if (err) {
       return res.status(401).json({ message: "Invalid or expired token" });
     }
 
-    // Store decoded info for use in the route
+    // Storing decoded info for use in the route
     req.user = decoded;
-    console.log("🔑 JWT verified:", req.user);
+    console.log("JWT verified:", req.user);
     next();
   });
 };
