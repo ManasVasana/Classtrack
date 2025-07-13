@@ -100,24 +100,34 @@ function StudentClass() {
           }
 
           if (res.status === 206 && res.data.step == "authenticate") {
-
             const authOptsRes = await api.post(
-              "/generate-authentication-options"
+              "/generate-authentication-options",
+              {},
+              { withCredentials: true }
             );
+
             const authResp = await startAuthentication({
               optionsJSON: authOptsRes.data,
             });
 
-            await api.post("/verify-authentication", {
-              auth_response: authResp,
-            });
+            await api.post(
+              "/verify-authentication",
+              {
+                auth_response: authResp,
+              },
+              { withCredentials: true }
+            );
 
-            const finalRes = await api.post("/markAttendance", {
-              class_id,
-              attendance_code: attendanceCode,
-              student_lat: lat,
-              student_lng: lng,
-            });
+            const finalRes = await api.post(
+              "/markAttendance",
+              {
+                class_id,
+                attendance_code: attendanceCode,
+                student_lat: lat,
+                student_lng: lng,
+              },
+              { withCredentials: true }
+            );
 
             setStatus({ success: true, message: finalRes.data.message });
           }
