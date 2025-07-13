@@ -96,7 +96,7 @@ function StudentClass() {
             await api.post("/verify-registration", attResp, {
               withCredentials: true,
             });
-            alert("Registered successfully. Proceeding to authenticate...");
+            alert("Registered successfully. Click again to authenticate and mark");
           }
 
           if (res.status === 206 && res.data.step == "authenticate") {
