@@ -87,7 +87,7 @@ function generateUniqueCode(callback) {
       (err, results) => {
         if (err) return callback(err);
         if (results.length > 0) return tryGenerate();
-        return callback(null, code); 
+        return callback(null, code);
       }
     );
   }
@@ -95,11 +95,11 @@ function generateUniqueCode(callback) {
   tryGenerate();
 }
 app.use("/", authRoutes);
-app.use("/", GetUserInfo); 
-app.use("/", GetStudentClassDetails); 
+app.use("/", GetUserInfo);
+app.use("/", GetStudentClassDetails);
 
 app.get("/isClassActive", verifyJWT, (req, res) => {
-  const class_id = req.query.class_id; 
+  const class_id = req.query.class_id;
   const query = `SELECT is_active, attendance_code
 FROM attendance_sessions 
 WHERE class_id = ? 
@@ -183,10 +183,6 @@ app.get("/getTClass_attend_table_details/:class_id", verifyJWT, (req, res) => {
 
 app.post("/verify-registration", verifyJWT, async (req, res) => {
   console.log(" Registration response received:", req.body);
-  console.log(
-    "challenge:",
-    req.session.currentRegistrationChallenge
-  );
 
   const attestationResponse = req.body;
 
@@ -195,59 +191,83 @@ app.post("/verify-registration", verifyJWT, async (req, res) => {
     return res.status(400).json({ message: "Missing credential ID" });
   }
 
-  try {
-    const verification = await verifyRegistrationResponse({
-      response: attestationResponse,
-      expectedChallenge: req.session.currentRegistrationChallenge,
-      expectedOrigin: isLocalTesting ? "http://localhost:5173" : "https://www.classtrack.me",
-      expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
-    });
+  // Fetch the challenge from the DB for this user
+  db.query(
+    "SELECT current_registeration_challenge FROM users WHERE id = ?",
+    [req.user.id],
+    async (err, result) => {
+      if (err) {
+        console.error("DB error:", err);
+        return res.status(500).json({ message: "Database error" });
+      }
+      if (!result || result.length === 0) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-    console.log("Verification result:", verification);
+      const dbChallenge = result[0].current_registeration_challenge;
 
-    const { verified, registrationInfo } = verification;
+      try {
+        const verification = await verifyRegistrationResponse({
+          response: attestationResponse,
+          expectedChallenge: dbChallenge,
+          expectedOrigin: isLocalTesting
+            ? "http://localhost:5173"
+            : "https://www.classtrack.me",
+          expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
+        });
 
-    if (!verified || !registrationInfo || !registrationInfo.credential) {
-      return res.status(400).json({ message: "Invalid registration info" });
-    }
+        console.log("Verification result:", verification);
 
-    console.log("verification:", verification);
-    console.log("verificationInfo", registrationInfo);
+        const { verified, registrationInfo } = verification;
 
-    const credentialID = registrationInfo.credential.id;
-    const publicKeyBuffer = registrationInfo.credential.publicKey;
-    const credentialType = registrationInfo.credentialType;
-
-    const updateQuery = `
-  UPDATE users
-  SET credential_id = ?, public_key = ?, credential_type = ?
-  WHERE id = ?
-`;
-
-    db.query(
-      updateQuery,
-      [
-        credentialID,
-        isoBase64URL.fromBuffer(publicKeyBuffer),
-        credentialType,
-        req.user.id,
-      ],
-      (err, result) => {
-        if (err) {
-          console.error("Failed to save WebAuthn credentials to DB:", err);
-          return res.status(500).json({ message: "Database update failed" });
+        if (!verified || !registrationInfo || !registrationInfo.credential) {
+          return res.status(400).json({ message: "Invalid registration info" });
         }
 
-        console.log("WebAuthn credentials saved to DB for user:", req.user.id);
-        res.status(200).json({ verified: true });
+        console.log("verification:", verification);
+        console.log("verificationInfo", registrationInfo);
+
+        const credentialID = registrationInfo.credential.id;
+        const publicKeyBuffer = registrationInfo.credential.publicKey;
+        const credentialType = registrationInfo.credentialType;
+
+        const updateQuery = `
+          UPDATE users
+          SET credential_id = ?, public_key = ?, credential_type = ?
+          WHERE id = ?
+        `;
+
+        db.query(
+          updateQuery,
+          [
+            credentialID,
+            isoBase64URL.fromBuffer(publicKeyBuffer),
+            credentialType,
+            req.user.id,
+          ],
+          (err, result) => {
+            if (err) {
+              console.error("Failed to save WebAuthn credentials to DB:", err);
+              return res
+                .status(500)
+                .json({ message: "Database update failed" });
+            }
+
+            console.log(
+              "WebAuthn credentials saved to DB for user:",
+              req.user.id
+            );
+            res.status(200).json({ verified: true });
+          }
+        );
+      } catch (err) {
+        console.error("Verification failed:", err);
+        res
+          .status(400)
+          .json({ message: "Verification failed", error: err.toString() });
       }
-    );
-  } catch (err) {
-    console.error("Verification failed:", err);
-    res
-      .status(400)
-      .json({ message: "Verification failed", error: err.toString() });
-  }
+    }
+  );
 });
 
 app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
@@ -269,7 +289,7 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
           throw new Error("credential_id must be a string in base64url format");
         }
         const options = await generateAuthenticationOptions({
-          rpID: isLocalTesting ? "localhost" : "classtrack.me", 
+          rpID: isLocalTesting ? "localhost" : "classtrack.me",
           // allowCredentials: [
           //   {
           //     id: credential_id,
@@ -281,8 +301,23 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
 
         console.log("Generated options:", options);
 
-        req.session.challenge = options.challenge;
-        res.json(options);
+        // Store the challenge in the DB
+        db.query(
+          "UPDATE users SET current_authentication_challenge = ? WHERE id = ?",
+          [options.challenge, userId],
+          (updateErr) => {
+            if (updateErr) {
+              console.error(
+                "Failed to save authentication challenge:",
+                updateErr
+              );
+              return res
+                .status(500)
+                .json({ message: "Failed to save challenge" });
+            }
+            res.json(options);
+          }
+        );
       } catch (err) {
         console.error("Auth Option Error:", err);
         res.status(500).json({ message: "Failed to generate options" });
@@ -294,53 +329,63 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
 app.post("/verify-authentication", verifyJWT, (req, res) => {
   const userId = req.user.id;
   const { auth_response } = req.body;
-  const challenge = req.session.challenge;
-  console.log("challenge:", req.session.challenge);
 
+  // Fetch credential info and challenge from DB
   db.query(
-    "SELECT credential_id, public_key, auth_counter FROM users WHERE id = ?",
+    "SELECT credential_id, public_key, auth_counter, current_authentication_challenge FROM users WHERE id = ?",
     [userId],
     async (err, results) => {
       if (err || results.length === 0) {
         return res.status(500).json({ message: "DB error" });
       }
 
-      const { credential_id, public_key, auth_counter } = results[0];
+      const {
+        credential_id,
+        public_key,
+        auth_counter,
+        current_authentication_challenge,
+      } = results[0];
 
       console.log("auth_response:", auth_response);
-      console.log("challenge:", challenge);
+      console.log("challenge (from DB):", current_authentication_challenge);
 
-      console.log("final:", isoBase64URL.toBuffer(public_key));
+      try {
+        const verification = await verifyAuthenticationResponse({
+          expectedChallenge: current_authentication_challenge,
+          expectedOrigin: isLocalTesting
+            ? "http://localhost:5173"
+            : "https://www.classtrack.me",
+          expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
+          response: auth_response,
+          credential: {
+            id: credential_id,
+            publicKey: isoBase64URL.toBuffer(public_key),
+            counter: auth_counter,
+          },
+        });
 
-      const verification = await verifyAuthenticationResponse({
-        expectedChallenge: challenge,
-        expectedOrigin: isLocalTesting ? "http://localhost:5173" : "https://www.classtrack.me",
-        expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
-        response: auth_response,
-        credential: {
-          id: credential_id,
-          publicKey: isoBase64URL.toBuffer(public_key),
-          counter: auth_counter,
-        },
-      });
-
-      if (!verification.verified) {
-        return res.status(401).json({ message: "Device not verified" });
-      }
-
-      // Update the counter in the database if verification succeeded
-      db.query(
-        "UPDATE users SET auth_counter = ? WHERE id = ?",
-        [verification.authenticationInfo.newCounter, userId],
-        (updateErr) => {
-          if (updateErr) {
-            console.error("Failed to update counter:", updateErr);
-          }
+        if (!verification.verified) {
+          return res.status(401).json({ message: "Device not verified" });
         }
-      );
 
-      req.session.deviceVerified = true;
-      res.json({ success: true });
+        // Update the counter in the database if verification succeeded
+        db.query(
+          "UPDATE users SET auth_counter = ? WHERE id = ?",
+          [verification.authenticationInfo.newCounter, userId],
+          (updateErr) => {
+            if (updateErr) {
+              console.error("Failed to update counter:", updateErr);
+            }
+            req.session.deviceVerified = true;
+            return res.json({ success: true });
+          }
+        );
+      } catch (err) {
+        console.error("Authentication verification failed:", err);
+        return res
+          .status(400)
+          .json({ message: "Authentication failed", error: err.toString() });
+      }
     }
   );
 });
@@ -387,7 +432,7 @@ app.post("/markAttendance", verifyJWT, async (req, res) => {
     if (!student.credential_id || !student.public_key) {
       const options = await generateRegistrationOptions({
         rpName: "ClassTrack",
-        rpID: isLocalTesting ? "localhost" : "classtrack.me", 
+        rpID: isLocalTesting ? "localhost" : "classtrack.me",
         userID: Buffer.from(userId.toString()),
         userName: student.username,
         attestationType: "none",
@@ -395,20 +440,32 @@ app.post("/markAttendance", verifyJWT, async (req, res) => {
           authenticatorAttachment: "platform",
           userVerification: "required",
           residentKey: "required",
-          requireResidentKey: "required",
+          requireResidentKey: true,
         },
       });
 
-      req.session.currentRegistrationChallenge = options.challenge;
-      console.log("Generated registration options:", options);
-      console.log(
-        "Session challenge:",
-        req.session.currentRegistrationChallenge
-      );
+      const registrationChallenge = options.challenge;
 
-      return res
-        .status(206)
-        .json({ step: "register", registrationOptions: options });
+      // Save challenge to DB for later verification
+      db.query(
+        "UPDATE users SET current_registeration_challenge = ? WHERE id = ?",
+        [registrationChallenge, userId],
+        (err, result) => {
+          if (err) {
+            console.error("Error saving registration challenge:", err);
+            return res
+              .status(500)
+              .json({ message: "Error saving registration challenge" });
+          }
+
+          console.log("Generated registration options:", options);
+
+          return res.status(206).json({
+            step: "register",
+            registrationOptions: options,
+          });
+        }
+      );
     }
 
     // Location + session validation
@@ -431,7 +488,7 @@ app.post("/markAttendance", verifyJWT, async (req, res) => {
         console.log("distance:", distance);
 
         if (distance > 100) {
-          return res.status(403).json({ message: "Not within 100 meters" });
+          return res.status(403).json({ message: `Not within 100 meters` });
         }
 
         // Check if already verified
@@ -490,34 +547,34 @@ app.post("/startAttendance", verifyJWT, (req, res) => {
         .json({ message: "DB error while checking session" });
     }
 
-  if (results.length > 0) {
-    return res
-      .status(400)
-      .json({ message: "You have already started a session today" });
-  }
-
-  generateUniqueCode((err, code) => {
-    if (err)
+    if (results.length > 0) {
       return res
-        .status(500)
-        .json({ message: "Error generating attendance code" });
+        .status(400)
+        .json({ message: "You have already started a session today" });
+    }
 
-    const insertQuery = `
+    generateUniqueCode((err, code) => {
+      if (err)
+        return res
+          .status(500)
+          .json({ message: "Error generating attendance code" });
+
+      const insertQuery = `
       INSERT INTO attendance_sessions (class_id, attendance_code, teacher_lat, teacher_lng, is_active)
       VALUES (?, ?, ?, ?, 1)
     `;
-    db.query(
-      insertQuery,
-      [class_id, code, teacher_lat, teacher_lng],
-      (err, result) => {
-        if (err)
-          return res
-            .status(500)
-            .json({ message: "DB error while starting session" });
-        return res.status(200).json({ message: "Class started", code });
-      }
-    );
-  });
+      db.query(
+        insertQuery,
+        [class_id, code, teacher_lat, teacher_lng],
+        (err, result) => {
+          if (err)
+            return res
+              .status(500)
+              .json({ message: "DB error while starting session" });
+          return res.status(200).json({ message: "Class started", code });
+        }
+      );
+    });
   });
 });
 
@@ -535,7 +592,7 @@ app.post("/stopAttendance", verifyJWT, (req, res) => {
 
     res.status(200).json({ message: "Class stopped" });
 
-    // STEP 2: Now updating counter and run warning logic 
+    // STEP 2: Now updating counter and run warning logic
     const counterQuery = `SELECT frequency_rate, counter FROM classes WHERE id = ?`;
     db.query(counterQuery, [class_id], (err, result) => {
       if (err || result.length === 0) {
@@ -637,7 +694,7 @@ HAVING attendance_percentage < ?;`;
         results.forEach((student) => {
           const { username, email, attendance_percentage } = student;
 
-          console.log("Sending email to:", email); 
+          console.log("Sending email to:", email);
 
           const mailOptions = {
             from: `"ClassTrack Notifications" <${process.env.EMAIL_USER}>`,
@@ -669,7 +726,7 @@ HAVING attendance_percentage < ?;`;
 };
 
 app.get("/GetClasses", verifyJWT, (req, res) => {
-  console.log("Authenticated user:", req.user); 
+  console.log("Authenticated user:", req.user);
   const userId = req.user.id;
   const getUser = "SELECT id, role FROM users WHERE id = ?";
   db.query(getUser, [userId], (err, userResult) => {
@@ -727,10 +784,10 @@ app.get("/GetClasses", verifyJWT, (req, res) => {
   GROUP BY c.id;
 `;
 
-db.query(studentQuery, [user.id, user.id], (err, result) => {
-  if (err) return res.status(500).json({ message: "DB error (classes)" });
-  return res.status(200).json(result);
-});
+      db.query(studentQuery, [user.id, user.id], (err, result) => {
+        if (err) return res.status(500).json({ message: "DB error (classes)" });
+        return res.status(200).json(result);
+      });
     } else {
       return res.status(401).json({ message: "Token is invalid or expired" });
     }
@@ -774,15 +831,15 @@ app.post("/CreateClass", verifyJWT, (req, res) => {
 });
 
 app.post("/JoinClass", verifyJWT, (req, res) => {
-  console.log("Authenticated user:", req.user); 
-  console.log("Request body:", req.body); 
+  console.log("Authenticated user:", req.user);
+  console.log("Request body:", req.body);
   const { class_code } = req.body;
   const student_username = req.user.username;
 
   const getStudent =
     "SELECT id FROM users WHERE username = ? AND role = 'student'";
   db.query(getStudent, [student_username], (err, studentResult) => {
-    console.log("Student query result:", studentResult); 
+    console.log("Student query result:", studentResult);
     if (err) return res.status(500).json({ message: "DB error (student)" });
     if (studentResult.length === 0)
       return res.status(404).json({ message: "Student not found" });
