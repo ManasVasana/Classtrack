@@ -27,7 +27,7 @@ require("dotenv").config();
 
 const db = require("./utils/db.js");
 
-const isLocalTesting = process.env.REACT_APP_LOCAL_TESTING === "true";
+const isLocalTesting = process.env.LocalTesting === "true";
 
 app.use(
   session({
@@ -38,7 +38,7 @@ app.use(
     cookie: {
       secure: isLocalTesting ? false : true,
       httpOnly: true,
-      sameSite: "none",
+      sameSite: "lax",
     },
   })
 );
@@ -180,30 +180,6 @@ app.get("/getTClass_attend_table_details/:class_id", verifyJWT, (req, res) => {
     return res.status(200).json(result);
   });
 });
-
-// app.post("/generate-registration-options", verifyJWT, (req, res) => {
-//   console.log("Generating registration options for user:", req.user);
-//   const { id, username } = req.user;
-
-//   const options = generateRegistrationOptions({
-//     rpName: "ClassTrack",
-//     // rpID: "classtrack.me", 
-//     rpID: "localhost", // Use for local development
-//     userID: Buffer.from(userId.toString()),
-
-//     userName: username,
-//     attestationType: "none",
-//     authenticatorSelection: {
-//       userVerification: "preferred",
-//       residentKey: "discouraged",
-//     },
-//   });
-
-//   req.session.challenge = options.challenge;
-//   console.log("Generated registration options:", options);
-//   console.log("Session challenge:", req.session.challenge);
-//   res.json(options);
-// });
 
 app.post("/verify-registration", verifyJWT, async (req, res) => {
   console.log(" Registration response received:", req.body);
