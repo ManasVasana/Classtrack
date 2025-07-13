@@ -11,6 +11,7 @@ import {
   AttendanceHistoryCard,
   AvgAttendance,
 } from "../components/Sclass_components";
+import { LoadingButton } from "../components/Loading";
 
 axios.defaults.withCredentials = true;
 
@@ -18,6 +19,7 @@ function StudentClass() {
   const { id: class_id } = useParams();
 
   const [attendanceData, setAttendanceData] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const attendancePercentage =
     attendanceData.length > 0
@@ -55,10 +57,17 @@ function StudentClass() {
 
   const handleAttendanceSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
 
-    if (!attendanceCode?.trim())
+    if (!attendanceCode?.trim()){
+      setLoading(false);
       return alert("Please enter the attendance code");
-    if (!navigator.geolocation) return alert("Geolocation not supported");
+    }
+
+    if (!navigator.geolocation){
+      setLoading(true);
+      return alert("Geolocation not supported");
+    } 
 
     setStatus(null);
 
@@ -96,7 +105,9 @@ function StudentClass() {
             await api.post("/verify-registration", attResp, {
               withCredentials: true,
             });
-            alert("Registered successfully. Click again to authenticate and mark");
+            alert(
+              "Registered successfully. Click again to authenticate and mark"
+            );
           }
 
           if (res.status === 206 && res.data.step == "authenticate") {
@@ -135,6 +146,8 @@ function StudentClass() {
           console.error("Error:", err);
           const msg = err?.response?.data?.message || err.message;
           setStatus({ success: false, message: msg });
+        } finally {
+          setLoading(false);
         }
       },
       (error) => {
@@ -191,10 +204,15 @@ function StudentClass() {
                     />
                   </div>
                   <button
+                    disabled={loading}
                     type="submit"
                     className="w-full bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg h-12 text-lg transition-colors"
                   >
-                    Submit Attendance
+                    {loading ? (
+                      <LoadingButton text={"Marking Attendance"} />
+                    ) : (
+                      "Mark Attendance"
+                    )}
                   </button>
 
                   {status && (

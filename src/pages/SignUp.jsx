@@ -235,6 +235,7 @@ function SignUp() {
 
             <button
               className="w-full bg-cyan-400 hover:bg-cyan-500 font-bold py-3 rounded-full transition duration-300 shadow-lg text-gray-800"
+              disabled={loading}              
               type="submit"
             >
               {loading ? <LoadingButton text={"Registering"} /> : "Sign Up"}
