@@ -370,8 +370,8 @@ app.post("/verify-authentication", verifyJWT, (req, res) => {
 
         // Update the counter in the database if verification succeeded
         db.query(
-          "UPDATE users SET auth_counter = ? WHERE id = ?",
-          [verification.authenticationInfo.newCounter, userId],
+          "UPDATE users SET is_device_verified = ?, auth_counter = ? WHERE id = ?",
+          [true,verification.authenticationInfo.newCounter, userId],
           (updateErr) => {
             if (updateErr) {
               console.error("Failed to update counter:", updateErr);
@@ -412,12 +412,13 @@ app.post("/markAttendance", verifyJWT, (req, res) => {
 
   // Step 1: Get student from DB
   db.query(
-    "SELECT id, username, credential_id, public_key FROM users WHERE id = ?",
+    "SELECT id, username, credential_id, public_key, is_device_verified FROM users WHERE id = ?",
     [userId],
     (err, userResult) => {
       if (err || userResult.length === 0) {
         return res.status(500).json({ message: "User not found" });
       }
+
       const student = userResult[0];
 
       // Step 2: Registration check
@@ -455,7 +456,7 @@ app.post("/markAttendance", verifyJWT, (req, res) => {
             }
           );
         });
-        return; // Stop further execution
+        return;
       }
 
       // Step 3: Get active attendance session
@@ -479,8 +480,8 @@ app.post("/markAttendance", verifyJWT, (req, res) => {
             return res.status(403).json({ message: "Not within 100 meters" });
           }
 
-          // Step 4: Check WebAuthn authentication
-          if (!req.session.deviceVerified) {
+          // Step 4: Check WebAuthn authentication (from DB now)
+          if (!student.is_device_verified) {
             return res.status(206).json({
               step: "authenticate",
               message: "WebAuthn authentication required",
@@ -509,10 +510,20 @@ app.post("/markAttendance", verifyJWT, (req, res) => {
                     return res.status(500).json({ message: "Insert failed" });
                   }
 
-                  req.session.deviceVerified = false;
-                  return res.json({
-                    message: "Attendance marked successfully",
-                  });
+                  // Step 7: Reset WebAuthn verification
+                  db.query(
+                    "UPDATE users SET is_device_verified = 0 WHERE id = ?",
+                    [userId],
+                    (err6) => {
+                      if (err6) {
+                        console.error("Failed to reset WebAuthn flag:", err6);
+                      }
+
+                      return res.json({
+                        message: "Attendance marked successfully",
+                      });
+                    }
+                  );
                 }
               );
             }
@@ -522,6 +533,7 @@ app.post("/markAttendance", verifyJWT, (req, res) => {
     }
   );
 });
+
 
 app.post("/startAttendance", verifyJWT, (req, res) => {
   const { class_id, teacher_lat, teacher_lng } = req.body;
