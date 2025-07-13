@@ -81,10 +81,10 @@ function StudentClass() {
             { withCredentials: true }
           );
 
-          // Case 1: Already registered and attendance marked
-          if (res.status === 200) {
-            return setStatus({ success: true, message: res.data.message });
-          }
+          // // Case 1: Already registered and attendance marked
+          // if (res.status === 200) {
+          //   return setStatus({ success: true, message: res.data.message });
+          // }
 
           // Case 2: Registration required
           if (res.status === 206 && res.data.step === "register") {
@@ -99,23 +99,28 @@ function StudentClass() {
             alert("Registered successfully. Proceeding to authenticate...");
           }
 
-          const authOptsRes = await api.post(
-            "/generate-authentication-options"
-          );
-          const authResp = await startAuthentication({
-            optionsJSON: authOptsRes.data,
-          });
+          if (res.status === 206 && res.data.step == "authenticate") {
 
-          await api.post("/verify-authentication", { auth_response: authResp });
+            const authOptsRes = await api.post(
+              "/generate-authentication-options"
+            );
+            const authResp = await startAuthentication({
+              optionsJSON: authOptsRes.data,
+            });
 
-          const finalRes = await api.post("/markAttendance", {
-            class_id,
-            attendance_code: attendanceCode,
-            student_lat: lat,
-            student_lng: lng,
-          });
+            await api.post("/verify-authentication", {
+              auth_response: authResp,
+            });
 
-          setStatus({ success: true, message: finalRes.data.message });
+            const finalRes = await api.post("/markAttendance", {
+              class_id,
+              attendance_code: attendanceCode,
+              student_lat: lat,
+              student_lng: lng,
+            });
+
+            setStatus({ success: true, message: finalRes.data.message });
+          }
         } catch (err) {
           console.error("Error:", err);
           const msg = err?.response?.data?.message || err.message;

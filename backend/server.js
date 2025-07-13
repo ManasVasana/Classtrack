@@ -175,7 +175,7 @@ app.get("/getTClass_attend_table_details/:class_id", verifyJWT, (req, res) => {
   });
 });
 
-app.post("/verify-registration", verifyJWT, async (req, res) => {
+app.post("/verify-registration", verifyJWT, (req, res) => {
   console.log(" Registration response received:", req.body);
 
   const attestationResponse = req.body;
@@ -189,7 +189,7 @@ app.post("/verify-registration", verifyJWT, async (req, res) => {
   db.query(
     "SELECT current_registeration_challenge FROM users WHERE id = ?",
     [req.user.id],
-    async (err, result) => {
+    (err, result) => {
       if (err) {
         console.error("DB error:", err);
         return res.status(500).json({ message: "Database error" });
@@ -200,66 +200,71 @@ app.post("/verify-registration", verifyJWT, async (req, res) => {
 
       const dbChallenge = result[0].current_registeration_challenge;
 
-      try {
-        const verification = await verifyRegistrationResponse({
-          response: attestationResponse,
-          expectedChallenge: dbChallenge,
-          expectedOrigin: isLocalTesting
-            ? "http://localhost:5173"
-            : "https://www.classtrack.me",
-          expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
-        });
+      verifyRegistrationResponse({
+        response: attestationResponse,
+        expectedChallenge: dbChallenge,
+        expectedOrigin: isLocalTesting
+          ? "http://localhost:5173"
+          : "https://www.classtrack.me",
+        expectedRPID: isLocalTesting ? "localhost" : "classtrack.me",
+      })
+        .then((verification) => {
+          console.log("Verification result:", verification);
 
-        console.log("Verification result:", verification);
+          const { verified, registrationInfo } = verification;
 
-        const { verified, registrationInfo } = verification;
-
-        if (!verified || !registrationInfo || !registrationInfo.credential) {
-          return res.status(400).json({ message: "Invalid registration info" });
-        }
-
-        console.log("verification:", verification);
-        console.log("verificationInfo", registrationInfo);
-
-        const credentialID = registrationInfo.credential.id;
-        const publicKeyBuffer = registrationInfo.credential.publicKey;
-        const credentialType = registrationInfo.credentialType;
-
-        const updateQuery = `
-          UPDATE users
-          SET credential_id = ?, public_key = ?, credential_type = ?
-          WHERE id = ?
-        `;
-
-        db.query(
-          updateQuery,
-          [
-            credentialID,
-            isoBase64URL.fromBuffer(publicKeyBuffer),
-            credentialType,
-            req.user.id,
-          ],
-          (err, result) => {
-            if (err) {
-              console.error("Failed to save WebAuthn credentials to DB:", err);
-              return res
-                .status(500)
-                .json({ message: "Database update failed" });
-            }
-
-            console.log(
-              "WebAuthn credentials saved to DB for user:",
-              req.user.id
-            );
-            return res.status(200).json({ verified: true });
+          if (!verified || !registrationInfo || !registrationInfo.credential) {
+            return res
+              .status(400)
+              .json({ message: "Invalid registration info" });
           }
-        );
-      } catch (err) {
-        console.error("Verification failed:", err);
-        return res
-          .status(400)
-          .json({ message: "Verification failed", error: err.toString() });
-      }
+
+          console.log("verification:", verification);
+          console.log("verificationInfo", registrationInfo);
+
+          const credentialID = registrationInfo.credential.id;
+          const publicKeyBuffer = registrationInfo.credential.publicKey;
+          const credentialType = registrationInfo.credentialType;
+
+          const updateQuery = `
+            UPDATE users
+            SET credential_id = ?, public_key = ?, credential_type = ?
+            WHERE id = ?
+          `;
+
+          db.query(
+            updateQuery,
+            [
+              credentialID,
+              isoBase64URL.fromBuffer(publicKeyBuffer),
+              credentialType,
+              req.user.id,
+            ],
+            (err, result) => {
+              if (err) {
+                console.error(
+                  "Failed to save WebAuthn credentials to DB:",
+                  err
+                );
+                return res
+                  .status(500)
+                  .json({ message: "Database update failed" });
+              }
+
+              console.log(
+                "WebAuthn credentials saved to DB for user:",
+                req.user.id
+              );
+              return res.status(200).json({ verified: true });
+            }
+          );
+        })
+        .catch((err) => {
+          console.error("Verification failed:", err);
+          return res
+            .status(400)
+            .json({ message: "Verification failed", error: err.toString() });
+        });
     }
   );
 });
@@ -385,16 +390,14 @@ app.post("/verify-authentication", verifyJWT, (req, res) => {
   );
 });
 
-app.post("/markAttendance", verifyJWT, async (req, res) => {
+app.post("/markAttendance", verifyJWT, (req, res) => {
   const { class_id, attendance_code, student_lat, student_lng } = req.body;
   const userId = req.user.id;
   const username = req.user.username;
 
   function haversineDistance(lat1, lon1, lat2, lon2) {
-    function toRad(x) {
-      return (x * Math.PI) / 180;
-    }
-    const R = 6371000; // meters
+    const toRad = (x) => (x * Math.PI) / 180;
+    const R = 6371000;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
     const a =
@@ -407,121 +410,117 @@ app.post("/markAttendance", verifyJWT, async (req, res) => {
     return R * c;
   }
 
-  const getUser = (userId) => {
-    return new Promise((resolve, reject) => {
+  // Step 1: Get student from DB
+  db.query(
+    "SELECT id, username, credential_id, public_key FROM users WHERE id = ?",
+    [userId],
+    (err, userResult) => {
+      if (err || userResult.length === 0) {
+        return res.status(500).json({ message: "User not found" });
+      }
+      const student = userResult[0];
+
+      // Step 2: Registration check
+      if (!student.credential_id || !student.public_key) {
+        generateRegistrationOptions({
+          rpName: "ClassTrack",
+          rpID: isLocalTesting ? "localhost" : "classtrack.me",
+          userID: Buffer.from(userId.toString()),
+          userName: student.username,
+          attestationType: "none",
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+            residentKey: "required",
+            requireResidentKey: true,
+          },
+        }).then((options) => {
+          const challenge = options.challenge;
+
+          db.query(
+            "UPDATE users SET current_registeration_challenge = ? WHERE id = ?",
+            [challenge, userId],
+            (err2) => {
+              if (err2) {
+                console.error("Error saving registration challenge:", err2);
+                return res
+                  .status(500)
+                  .json({ message: "Error saving registration challenge" });
+              }
+
+              return res.status(206).json({
+                step: "register",
+                registrationOptions: options,
+              });
+            }
+          );
+        });
+        return; // Stop further execution
+      }
+
+      // Step 3: Get active attendance session
       db.query(
-        "SELECT id, username, credential_id, public_key FROM users WHERE id = ?",
-        [userId],
-        (err, result) => {
-          if (err || result.length === 0) return reject("User not found");
-          resolve(result[0]);
-        }
-      );
-    });
-  };
-
-  try {
-    const student = await getUser(userId);
-
-    // Handle first-time registration
-    if (!student.credential_id || !student.public_key) {
-      const options = await generateRegistrationOptions({
-        rpName: "ClassTrack",
-        rpID: isLocalTesting ? "localhost" : "classtrack.me",
-        userID: Buffer.from(userId.toString()),
-        userName: student.username,
-        attestationType: "none",
-        authenticatorSelection: {
-          authenticatorAttachment: "platform",
-          userVerification: "required",
-          residentKey: "required",
-          requireResidentKey: true,
-        },
-      });
-
-      const registrationChallenge = options.challenge;
-
-      // Save challenge to DB for later verification
-      db.query(
-        "UPDATE users SET current_registeration_challenge = ? WHERE id = ?",
-        [registrationChallenge, userId],
-        (err, result) => {
-          if (err) {
-            console.error("Error saving registration challenge:", err);
-            return res
-              .status(500)
-              .json({ message: "Error saving registration challenge" });
+        "SELECT id, teacher_lat, teacher_lng FROM attendance_sessions WHERE class_id = ? AND attendance_code = ? AND is_active = 1",
+        [class_id, attendance_code],
+        (err3, sessionResults) => {
+          if (err3 || sessionResults.length === 0) {
+            return res.status(404).json({ message: "Invalid code/session" });
           }
 
-          console.log("Generated registration options:", options);
+          const session = sessionResults[0];
+          const distance = haversineDistance(
+            session.teacher_lat,
+            session.teacher_lng,
+            student_lat,
+            student_lng
+          );
 
-          return res.status(206).json({
-            step: "register",
-            registrationOptions: options,
-          });
+          if (distance > 100) {
+            return res.status(403).json({ message: "Not within 100 meters" });
+          }
+
+          // Step 4: Check WebAuthn authentication
+          if (!req.session.deviceVerified) {
+            return res.status(206).json({
+              step: "authenticate",
+              message: "WebAuthn authentication required",
+            });
+          }
+
+          // Step 5: Check if already marked
+          db.query(
+            "SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?",
+            [session.id, userId],
+            (err4, result) => {
+              if (err4) {
+                return res.status(500).json({ message: "DB error" });
+              }
+
+              if (result.length > 0) {
+                return res.status(400).json({ message: "Already marked" });
+              }
+
+              // Step 6: Mark attendance
+              db.query(
+                "INSERT INTO attendance_records (session_id, student_id) VALUES (?, ?)",
+                [session.id, userId],
+                (err5) => {
+                  if (err5) {
+                    return res.status(500).json({ message: "Insert failed" });
+                  }
+
+                  req.session.deviceVerified = false;
+                  return res.json({
+                    message: "Attendance marked successfully",
+                  });
+                }
+              );
+            }
+          );
         }
       );
     }
-
-    // Location + session validation
-    db.query(
-      "SELECT id, teacher_lat, teacher_lng FROM attendance_sessions WHERE class_id = ? AND attendance_code = ? AND is_active = 1",
-      [class_id, attendance_code],
-      (err, sessionResult) => {
-        if (err || sessionResult.length === 0) {
-          return res.status(404).json({ message: "Invalid code/session" });
-        }
-
-        const session = sessionResult[0];
-        const distance = haversineDistance(
-          session.teacher_lat,
-          session.teacher_lng,
-          student_lat,
-          student_lng
-        );
-
-        console.log("distance:", distance);
-
-        if (distance > 100) {
-          return res.status(403).json({ message: `Not within 100 meters` });
-        }
-
-        // Check if already verified
-        if (!req.session.deviceVerified) {
-          return res.status(206).json({
-            step: "authenticate",
-            message: "WebAuthn auth required",
-          });
-        }
-
-        // Check if already marked
-        db.query(
-          "SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?",
-          [session.id, userId],
-          (err, existing) => {
-            if (existing.length > 0) {
-              return res.status(400).json({ message: "Already marked" });
-            }
-
-            db.query(
-              "INSERT INTO attendance_records (session_id, student_id) VALUES (?, ?)",
-              [session.id, userId],
-              (err) => {
-                if (err)
-                  return res.status(500).json({ message: "Insert failed" });
-                // Clear session
-                req.session.deviceVerified = false;
-                res.json({ message: "Attendance marked successfully" });
-              }
-            );
-          }
-        );
-      }
-    );
-  } catch (err) {
-    console.error(" markAttendance error:", err);
-    return res.status(500).json({ message: "Internal Server Error" });
-  }
+  );
 });
 
 app.post("/startAttendance", verifyJWT, (req, res) => {
