@@ -251,12 +251,12 @@ app.post("/verify-registration", verifyJWT, async (req, res) => {
               "WebAuthn credentials saved to DB for user:",
               req.user.id
             );
-            res.status(200).json({ verified: true });
+            return res.status(200).json({ verified: true });
           }
         );
       } catch (err) {
         console.error("Verification failed:", err);
-        res
+        return res
           .status(400)
           .json({ message: "Verification failed", error: err.toString() });
       }
@@ -278,11 +278,12 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
       const { credential_id, credential_type } = results[0];
       console.log("debug:", credential_id, credential_type);
 
+      let options;
       try {
         if (typeof credential_id !== "string") {
           throw new Error("credential_id must be a string in base64url format");
         }
-        const options = await generateAuthenticationOptions({
+        options = await generateAuthenticationOptions({
           rpID: isLocalTesting ? "localhost" : "classtrack.me",
           // allowCredentials: [
           //   {
@@ -294,28 +295,28 @@ app.post("/generate-authentication-options", verifyJWT, async (req, res) => {
         });
 
         console.log("Generated options:", options);
-
-        // Store the challenge in the DB
-        db.query(
-          "UPDATE users SET current_authentication_challenge = ? WHERE id = ?",
-          [options.challenge, userId],
-          (updateErr) => {
-            if (updateErr) {
-              console.error(
-                "Failed to save authentication challenge:",
-                updateErr
-              );
-              return res
-                .status(500)
-                .json({ message: "Failed to save challenge" });
-            }
-            res.json(options);
-          }
-        );
       } catch (err) {
         console.error("Auth Option Error:", err);
-        res.status(500).json({ message: "Failed to generate options" });
+        return res.status(500).json({ message: "Failed to generate options" });
       }
+
+      // Store the challenge in the DB
+      db.query(
+        "UPDATE users SET current_authentication_challenge = ? WHERE id = ?",
+        [options.challenge, userId],
+        (updateErr) => {
+          if (updateErr) {
+            console.error(
+              "Failed to save authentication challenge:",
+              updateErr
+            );
+            return res
+              .status(500)
+              .json({ message: "Failed to save challenge" });
+          }
+          return res.json(options);
+        }
+      );
     }
   );
 });
